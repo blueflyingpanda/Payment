@@ -1,3 +1,3 @@
 Содержание
 # Payment
-Remoste payment system for economic game
+Remote payment system for economic game
