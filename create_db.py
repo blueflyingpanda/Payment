@@ -5,7 +5,6 @@ con = sqlite3.connect("payments.sqlite")
 cur = con.cursor()
 
 cur.execute("""CREATE TABLE students(student_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nickname VARCHAR(255) NOT NULL UNIQUE,
             firstname VARCHAR(255) NOT NULL,
             middlename VARCHAR(255) NOT NULL,
             lastname VARCHAR(255) NOT NULL,
@@ -16,7 +15,6 @@ cur.execute("""CREATE TABLE students(student_id INTEGER PRIMARY KEY AUTOINCREMEN
             FOREIGN KEY (company) REFERENCES companies(company_id))""")
 
 cur.execute("""CREATE TABLE teachers(teacher_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nickname VARCHAR(255) NOT NULL UNIQUE,
             firstname VARCHAR(255) NOT NULL,
             middlename VARCHAR(255) NOT NULL,
             lastname VARCHAR(255) NOT NULL,
