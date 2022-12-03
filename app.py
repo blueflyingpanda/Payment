@@ -17,7 +17,13 @@ logger = logging.getLogger('only_logger')
 
 @app.route('/', methods=['GET'])
 def hello_world():
-    return 'Hello World!'
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+            SELECT * FROM students;
+        """)
+        rows = cur.fetchall()
+    return jsonify(status=200, message=rows)
 
 
 @app.route('/student', methods=['POST'])
@@ -31,7 +37,7 @@ def register_student():
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute(f"""
+        cur.execute("""
             INSERT INTO students(firstname, middlename, lastname, grade, email, money, company)
             VALUES (?, ?, ?, ?, ?, ?, ?) 
             """, (firstname, middlename, lastname, grade, email, 0, None)
