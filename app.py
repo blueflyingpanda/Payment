@@ -78,7 +78,8 @@ def authenticate_user():
     token = get_auth_token(password)
     if sys.version_info.minor < 10:
         token = token.decode('utf-8')  # noqa
-    logger.debug(f'{"teacher" if is_teacher else "player"} {user.firstname} {user.middlename} {user.lastname} logged in')
+    logger.debug(f'{"teacher" if is_teacher else "player"} '
+                 f'{user[0].firstname} {user[0].middlename} {user[0].lastname} logged in')
     return jsonify(status=200, message=user, teacher=is_teacher, auth_token=token)
 
 
