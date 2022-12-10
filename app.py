@@ -78,11 +78,12 @@ def authenticate_user():
     token = get_auth_token(password)
     if sys.version_info.minor < 10:
         token = token.decode('utf-8')  # noqa
+    logger.debug(f'{"teacher" if is_teacher else "player"} {user.firstname} {user.middlename} {user.lastname} logged in')
     return jsonify(status=200, message=user, teacher=is_teacher, auth_token=token)
 
 
 @app.route('/debug', methods=['GET'])
-def debug_database():
+def debug_database():  # TODO: remove in production
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
