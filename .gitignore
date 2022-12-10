@@ -5,3 +5,4 @@ token.txt
 *.log
 __pycache__/
 secret.txt
+credentials.txt

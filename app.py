@@ -1,4 +1,6 @@
-from flask import Flask, request, jsonify, make_response
+import sys
+
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -20,8 +22,8 @@ with open(SECRET_FILE) as fr:
 LOG_FILE = 'history.log'
 logging.basicConfig(
     filename=LOG_FILE,
-    filemode='w',
-    format='%(name)s - %(levelname)s - %(message)s',
+    filemode='a',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG
 )
 logger = logging.getLogger('only_logger')
@@ -74,6 +76,8 @@ def authenticate_user():
         if not user:
             return jsonify(status=UNAUTHORIZED, message=["wrong password"]), UNAUTHORIZED
     token = get_auth_token(password)
+    if sys.version_info.minor < 10:
+        token = token.decode('utf-8')  # noqa
     return jsonify(status=200, message=user, teacher=is_teacher, auth_token=token)
 
 

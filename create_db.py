@@ -1,10 +1,15 @@
 import sqlite3
 import pandas as pd
 import numpy as np
+from app import logger
 from hashlib import sha256
+
+
 
 IDS_FILE = 'ids.txt'
 TABLE_FILE = 'economic_game.xlsx'
+table_name, extension = TABLE_FILE.rsplit('.', 1)
+table_with_passwords = f'{table_name}_with_passwords.{extension}'
 
 con = sqlite3.connect("payments.sqlite")
 cur = con.cursor()
@@ -17,8 +22,9 @@ def get_ids(from_file: str) -> set[str]:
 
 def assign_passwords(from_table: str, to_table: str, passwords: set[str]) -> pd.DataFrame:
     df = pd.read_excel(from_table)
-    df['password'] = list(ids)[:len(df)]
-    df.sort_values(by='grade', inplace=True)
+    df['password'] = list(passwords)[:len(df)]
+    df['sent'] = 0
+    df.sort_values(by='lastname', inplace=True)
     df.to_excel(to_table)
     return df
 
@@ -30,6 +36,7 @@ def create_tables() -> None:
                     lastname VARCHAR(255) NOT NULL,
                     grade INTEGER NOT NULL,
                     password VARCHAR(255) NOT NULL UNIQUE,
+                    email VARCHAR(255) UNIQUE,
                     money INTEGER NOT NULL,
                     company INTEGER,
                     FOREIGN KEY (company) REFERENCES companies(company_id))""")
@@ -38,6 +45,7 @@ def create_tables() -> None:
                     firstname VARCHAR(255) NOT NULL,
                     middlename VARCHAR(255) NOT NULL,
                     lastname VARCHAR(255) NOT NULL,
+                    email VARCHAR(255) UNIQUE,
                     money INTEGER NOT NULL,
                     password VARCHAR(255) NOT NULL UNIQUE)""")
 
@@ -54,16 +62,16 @@ def fill_in_tables(df: pd.DataFrame) -> None:
         hashed_pass = sha256(row['password'].encode()).hexdigest()
         if row['grade'] is not np.nan:
             cur.execute("""
-                        INSERT INTO players(firstname, middlename, lastname, grade, password, money, company)
-                        VALUES (?, ?, ?, ?, ?, ?, ?) 
-                        """, (row['firstname'], row['middlename'], row['lastname'], row['grade'], hashed_pass, 0, None)
+                        INSERT INTO players(firstname, middlename, lastname, grade, password, money, company, email)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
+                        """, (row['firstname'], row['middlename'], row['lastname'], row['grade'], hashed_pass, 0, None, row['email'])
                         )
         else:
             cur.execute("""
-                        INSERT INTO teachers(firstname, middlename, lastname, password, money)
-                        VALUES (?, ?, ?, ?, ?) 
+                        INSERT INTO teachers(firstname, middlename, lastname, password, money, email)
+                        VALUES (?, ?, ?, ?, ?, ?) 
                         """,
-                        (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0)
+                        (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0, row['email'])
                         )
     con.commit()
 
@@ -71,8 +79,7 @@ def fill_in_tables(df: pd.DataFrame) -> None:
 if __name__ == '__main__':
 
     ids = get_ids(from_file=IDS_FILE)
-    table_name, extension = TABLE_FILE.rsplit('.', 1)
-    df = assign_passwords(from_table=TABLE_FILE, to_table=f'{table_name}_with_passwords.{extension}', passwords=ids)
+    df = assign_passwords(from_table=TABLE_FILE, to_table=table_with_passwords, passwords=ids)
     create_tables()
     fill_in_tables(df)
-    print('database created!')
+    logger.info('database created!')
