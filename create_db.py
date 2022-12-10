@@ -21,11 +21,11 @@ def get_ids(from_file: str) -> set[str]:
 
 
 def assign_passwords(from_table: str, to_table: str, passwords: set[str]) -> pd.DataFrame:
-    df = pd.read_excel(from_table)
+    df = pd.read_excel(from_table, engine='openpyxl')
     df['password'] = list(passwords)[:len(df)]
     df['sent'] = 0
     df.sort_values(by='lastname', inplace=True)
-    df.to_excel(to_table)
+    df.to_excel(to_table, engine='openpyxl')
     return df
 
 

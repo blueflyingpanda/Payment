@@ -55,7 +55,7 @@ class MailSender:
 
 if __name__ == '__main__':
     ms = MailSender('credentials.txt', signature=SIGNATURE)
-    df = pd.read_excel(table_with_passwords)
+    df = pd.read_excel(table_with_passwords, engine='openpyxl')
     count = 0
     for i, row in df.iterrows():
         if row['email'] is not np.nan and not row['sent']:
@@ -63,5 +63,5 @@ if __name__ == '__main__':
             df.at[i, 'sent'] = 1
             count += 1
             logger.debug(f'Email sent to {row["lastname"]} {row["firstname"]} {row["middlename"]} ({row["email"]})')
-    df.to_excel(table_with_passwords)
+    df.to_excel(table_with_passwords, engine='openpyxl')
     logger.info(f"{count} emails were sent")
