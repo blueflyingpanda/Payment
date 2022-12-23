@@ -64,13 +64,13 @@ def authenticate_user():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, money, company FROM players WHERE password=?;
+                    SELECT firstname, middlename, lastname, grade, money, company, player_id FROM players WHERE password=?;
                     """, (password,))
         user = cur.fetchall()
         if not user:
             is_teacher = True
             cur.execute("""
-                        SELECT firstname, middlename, lastname, money FROM teachers WHERE password=?;
+                        SELECT firstname, middlename, lastname, money, teacher_id FROM teachers WHERE password=?;
                         """, (password,))
             user = cur.fetchall()
         if not user:
@@ -103,7 +103,7 @@ def get_player_info(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, money, company FROM players WHERE password=?;
+                    SELECT firstname, middlename, lastname, grade, money, company, player_id FROM players WHERE password=?;
                     """, (sub,))
         user = cur.fetchall()
     if not user:
@@ -117,7 +117,7 @@ def get_teacher_info(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, money FROM teachers WHERE password=?;
+                        SELECT firstname, middlename, lastname, money, teacher_id FROM teachers WHERE password=?;
                     """, (sub,))
         user = cur.fetchall()
     if not user:
