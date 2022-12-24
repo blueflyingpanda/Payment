@@ -62,9 +62,9 @@ def fill_in_tables(df: pd.DataFrame) -> None:
         hashed_pass = sha256(row['password'].encode()).hexdigest()
         if row['grade'] is not np.nan:
             cur.execute("""
-                        INSERT INTO players(firstname, middlename, lastname, grade, password, money, company, email)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
-                        """, (row['firstname'], row['middlename'], row['lastname'], row['grade'], hashed_pass, 0, None, row['email'])
+                        INSERT INTO players(firstname, middlename, lastname, grade, password, money, company, email, tax_paid, fine)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) 
+                        """, (row['firstname'], row['middlename'], row['lastname'], row['grade'], hashed_pass, 0, None, row['email'], 0, 0)
                         )
         else:
             cur.execute("""

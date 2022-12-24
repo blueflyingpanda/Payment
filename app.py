@@ -82,6 +82,25 @@ def authenticate_user():
     return jsonify(status=200, message=user, teacher=is_teacher, auth_token=token)
 
 
+@app.route('/paytax', methods=['POST'])
+@check_authorization
+def pay_tax(sub=None):
+    TAX_AMOUNT = 10
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+                    SELECT firstname, middlename, lastname, money, tax_paid, fine FROM players WHERE password=?;
+                    """, (sub,))
+        user = cur.fetchall()
+        if user[4]:  # if tax has already been paid
+            return jsonify(status=400, message="taxes have already been paid", fine=user[5])
+        cur.execute("""
+                    UPDATE players SET money= CASE WHEN money < 10 THEN 0 ELSE money - ? END WHERE password=?;
+                    """, (TAX_AMOUNT, sub))
+    logger.debug(f'{user} paid taxes')
+    return jsonify(status=200, message="taxes are paid", fine=user[5])
+
+
 @app.route('/debug', methods=['GET'])
 def debug_database():  # TODO: remove in production
     with sqlite3.connect("payments.sqlite") as con:
