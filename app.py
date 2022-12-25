@@ -26,7 +26,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG
 )
-logger = logging.getLogger('only_logger')
+logger = logging.getLogger('rest_logger')
 
 
 def check_authorization(f):
@@ -92,11 +92,15 @@ def pay_tax(sub=None):
                     SELECT firstname, middlename, lastname, money, tax_paid, fine FROM players WHERE password=?;
                     """, (sub,))
         user = cur.fetchall()
+        if user[3] < TAX_AMOUNT:
+            logger.debug(f'{user} has not enough money to pay tax')
+            return jsonify(status=400, message="not enough money to pay tax", fine=user[5])
         if user[4]:  # if tax has already been paid
             return jsonify(status=400, message="taxes have already been paid", fine=user[5])
         cur.execute("""
-                    UPDATE players SET money= CASE WHEN money < 10 THEN 0 ELSE money - ? END WHERE password=?;
+                    UPDATE players SET money=money - ? WHERE password=?;
                     """, (TAX_AMOUNT, sub))
+        con.commit()
     logger.debug(f'{user} paid taxes')
     return jsonify(status=200, message="taxes are paid", fine=user[5])
 
@@ -122,7 +126,7 @@ def get_player_info(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, money, company, player_id FROM players WHERE password=?;
+                    SELECT firstname, middlename, lastname, grade, money, company, player_id, fine FROM players WHERE password=?;
                     """, (sub,))
         user = cur.fetchall()
     if not user:
