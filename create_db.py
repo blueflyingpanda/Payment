@@ -42,6 +42,8 @@ def create_tables() -> None:
                     email VARCHAR(255) UNIQUE,
                     money INTEGER NOT NULL,
                     company INTEGER,
+                    tax_paid INTEGER,
+                    fine INTEGER,
                     FOREIGN KEY (company) REFERENCES companies(company_id))""")
 
     cur.execute("""CREATE TABLE teachers(teacher_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,7 +66,7 @@ def create_tables() -> None:
                         email VARCHAR(255) UNIQUE,
                         cash INTEGER NOT NULL,
                         coin INTEGER NOT NULL,
-                        password VARCHAR(255) NOT NULL UNIQUE""")
+                        password VARCHAR(255) NOT NULL UNIQUE)""")
     con.commit()
 
 
