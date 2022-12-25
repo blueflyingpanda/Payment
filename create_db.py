@@ -42,6 +42,7 @@ def create_tables() -> None:
                     email VARCHAR(255) UNIQUE,
                     money INTEGER NOT NULL,
                     company INTEGER,
+                    founder INTEGER,
                     tax_paid INTEGER,
                     fine INTEGER,
                     FOREIGN KEY (company) REFERENCES companies(company_id))""")
@@ -56,9 +57,19 @@ def create_tables() -> None:
 
     cur.execute("""CREATE TABLE companies(company_id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name VARCHAR(255) NOT NULL UNIQUE,
-                    money INTEGER NOT NULL,
-                    owner INTEGER NOT NULL,
-                    FOREIGN KEY (owner) REFERENCES players(player_id))""")
+                    revenue INTEGER NOT NULL,
+                    tax INTEGER NOT NULL,
+                    private INTEGER NOT NULL,
+                    money INTEGER NOT NULL)""")
+
+    cur.execute("""CREATE TABLE services(service_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                name VARCHAR(255) NOT NULL UNIQUE)""")
+
+    # junction table
+    cur.execute("""CREATE TABLE companies_to_services(company_id INTEGER, service_id INTEGER,
+                        FOREIGN KEY (company_id) REFERENCES companies(company_id),
+                        FOREIGN KEY (service_id) REFERENCES companies(service_id))""")
+
     cur.execute("""CREATE TABLE ministers(minister_id INTEGER PRIMARY KEY AUTOINCREMENT,
                         firstname VARCHAR(255) NOT NULL,
                         middlename VARCHAR(255) NOT NULL,
