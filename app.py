@@ -214,6 +214,101 @@ def pay_teacher_salary(sub=None):
     return jsonify(status=200, message="salary paid")
 
 
+@app.route('/company-salary', methods=['POST'])
+@check_authorization
+def pay_company_salary(sub=None):
+    INCOME_TAX = 0.1
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT company FROM players WHERE password=? AND founder=1 AND company NOT NULL""", (sub,))
+        founder = cur.fetchone()
+        if not founder:
+            logger.warning(f'no such founder {sub}')
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+        company = founder[0]
+        cur.execute("""SELECT salary, money FROM companies WHERE company_id=?""", (company,))
+        salary = cur.fetchone()
+        if not salary:
+            logger.warning(f'no such company {company}')
+            return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
+        salary, money = salary[0], salary[1]
+        cur.execute("""SELECT COUNT(player_id)
+                    FROM players INNER JOIN companies c on c.company_id = players.company
+                    WHERE company = ? """, (company,))
+        employees = cur.fetchone()[0]
+        if money < salary * employees:
+            logger.warning(f'not enough money to pay salary in company {company}: {money} < {salary * employees}')
+            return jsonify(status=400, message="not enough money"), 400
+        cur.execute("""
+                    UPDATE players SET money = money + ? WHERE player_id IN (SELECT player_id
+                    FROM players INNER JOIN companies c on c.company_id = players.company
+                    WHERE company = ? )""", (round(salary * (1 - INCOME_TAX)), company))
+        cur.execute("""UPDATE companies SET money = money - ? WHERE company_id=?""", (salary * employees, company))
+        con.commit()
+    logger.debug(f'{company} paid salary init by {sub}')
+    return jsonify(status=200, message="salary paid")
+
+
+@app.route('/add-employee', methods=['POST'])  # {"signature": "36deacb32d93988f9b8a0cd06b56af05144b6a17eb40f049d7ca1acef8a4e055", "employee": 12}
+@check_authorization
+def add_employee(sub=None):
+    signature = request.get_json().get('signature')
+    employee_id = request.get_json().get('employee')
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT company FROM players WHERE password=? AND founder=1 AND company NOT NULL""", (sub,))
+        founder = cur.fetchone()
+        if not founder:
+            logger.warning(f'no such founder {sub}')
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+        company = founder[0]
+        cur.execute("""SELECT minister_id FROM ministers WHERE password=?""", (signature,))
+        minister = cur.fetchone()
+        if not minister:
+            logger.warning(f'wrong minister signature')
+            return jsonify(status=400, message="wrong minister signature"), 400
+        minister = minister[0]
+        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company IS NULL""", (employee_id,))
+        employee = cur.fetchone()
+        if not employee:
+            logger.warning(f'no such employee OR working in another company OR is founder - id {employee_id}')
+            return jsonify(status=400, message="no such employee OR working in another company OR is founder"), 400
+        cur.execute("""UPDATE players SET company = ? WHERE player_id=?""", (company, employee_id))
+        con.commit()
+    logger.debug(f'player {employee_id} was added to the company {company} by {sub} - minister {minister}')
+    return jsonify(status=200, message="player was added to the company")
+
+
+@app.route('/remove-employee', methods=['POST'])  # {"signature": "36deacb32d93988f9b8a0cd06b56af05144b6a17eb40f049d7ca1acef8a4e055", "employee": 12}
+@check_authorization
+def remove_employee(sub=None):
+    signature = request.get_json().get('signature')
+    employee_id = request.get_json().get('employee')
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT company FROM players WHERE password=? AND founder=1 AND company NOT NULL""", (sub,))
+        founder = cur.fetchone()
+        if not founder:
+            logger.warning(f'no such founder {sub}')
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+        company = founder[0]
+        cur.execute("""SELECT minister_id FROM ministers WHERE password=?""", (signature,))
+        minister = cur.fetchone()
+        if not minister:
+            logger.warning(f'wrong minister signature')
+            return jsonify(status=400, message="wrong minister signature"), 400
+        minister = minister[0]
+        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company=?""", (employee_id, company))
+        employee = cur.fetchone()
+        if not employee:
+            logger.warning(f'no such employee OR not working in this company OR is founder - id {employee_id}')
+            return jsonify(status=400, message="no such employee OR not working in this company OR is founder"), 400
+        cur.execute("""UPDATE players SET company = NULL WHERE player_id=?""", (employee_id,))
+        con.commit()
+    logger.debug(f'player {employee_id} was removed from the company {company} by {sub} - minister {minister}')
+    return jsonify(status=200, message="player was removed from the company")
+
+
 @app.route('/check-player', methods=['GET'])
 def check_player():
     student_id = request.args.get('player_id')
@@ -247,6 +342,21 @@ def drop_charges():
         con.commit()
     logger.info(f"charges dropped for player {student_id}")
     return jsonify(status=200, message="charges dropped")
+
+
+@app.route('/company', methods=['GET'])
+def get_company_info():
+    company_id = request.args.get('company_id')
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+                    SELECT * FROM companies WHERE company_id=?;
+                    """, (company_id,))
+        company = cur.fetchone()
+        if not company:
+            logger.warning(f"company {company_id} does not exist")
+            return jsonify(status=NOT_FOUND, message="company does not exist"), NOT_FOUND
+    return jsonify(status=200, company=company)
 
 
 @app.route('/withdraw', methods=['POST'])

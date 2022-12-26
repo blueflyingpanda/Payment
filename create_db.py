@@ -9,6 +9,7 @@ from hashlib import sha256
 IDS_FILE = 'ids.txt'
 TABLE_FILE = 'economic_game.xlsx'
 MINISTRY_TABLE_FILE = 'economic_game_ministers.xlsx'
+COMPANY_TABLE_FILE = 'economic_game_companies.xlsx'
 table_name, extension = TABLE_FILE.rsplit('.', 1)
 table_with_passwords = f'{table_name}_with_passwords.{extension}'
 table_name, extension = MINISTRY_TABLE_FILE.rsplit('.', 1)
@@ -60,7 +61,8 @@ def create_tables() -> None:
                     revenue INTEGER NOT NULL,
                     tax INTEGER NOT NULL,
                     private INTEGER NOT NULL,
-                    money INTEGER NOT NULL)""")
+                    money INTEGER NOT NULL,
+                    salary INTEGER NOT NULL)""")
 
     cur.execute("""CREATE TABLE services(service_id INTEGER PRIMARY KEY AUTOINCREMENT,
                                 name VARCHAR(255) NOT NULL UNIQUE)""")
@@ -81,7 +83,12 @@ def create_tables() -> None:
     con.commit()
 
 
-def fill_in_tables(df: pd.DataFrame, ministry_df: pd.DataFrame) -> None:
+def sql_str(values: list):
+    return ','.join(values)
+
+
+def fill_in_tables(df: pd.DataFrame, ministry_df: pd.DataFrame, companies_df: pd.DataFrame) -> None:
+
     for _, row in df.iterrows():
         hashed_pass = sha256(row['password'].encode()).hexdigest()
         if row['grade'] is not np.nan:
@@ -97,17 +104,38 @@ def fill_in_tables(df: pd.DataFrame, ministry_df: pd.DataFrame) -> None:
                         """,
                         (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0, row['email'])
                         )
+
     for _, row in ministry_df.iterrows():
         hashed_pass = sha256(row['password'].encode()).hexdigest()
         cur.execute("""
                     INSERT INTO ministers(firstname, middlename, lastname, email, password, cash, coin)
                     VALUES (?, ?, ?, ?, ?, ?, ?) 
                     """, (row['firstname'], row['middlename'], row['lastname'], row['email'], hashed_pass, row['cash'], 0,))
+    companies_df['founders'] = companies_df['founders'].astype('str')
+
+    for _, row in companies_df.iterrows():
+        services = [service.strip() for service in row['services'].split('|')]
+        founders = [service.strip() for service in row['founders'].split('|')]
+        cur.execute("""
+                    INSERT INTO companies(name, revenue, tax, private, salary, money)
+                    VALUES (?, ?, ?, ?, ?, 0) 
+                    """, (row['name'], row['revenue'], row['tax'], row['private'], row['salary']))
+        cur.execute("""SELECT company_id FROM companies WHERE name=?""", (row['name'],))
+        company_id = cur.fetchone()[0]
+        cur.execute("""UPDATE players SET founder=1, company=? WHERE player_id IN (%s)""" % ','.join('?' for f in founders), (company_id, *founders))
+        for service in services:
+            cur.execute("""INSERT OR IGNORE INTO services(name) VALUES (?)""", (service,))
+            cur.execute("""SELECT service_id FROM services WHERE name=?""", (service,))
+            service_id = cur.fetchone()[0]
+            cur.execute("""INSERT INTO companies_to_services(company_id, service_id) VALUES (?, ?)""",
+                        (company_id, service_id))
+
     con.commit()
 
 
 if __name__ == '__main__':
-
+    # cur.execute("""UPDATE players SET founder=1, company=? WHERE player_id IN (9,10)""", (3,))
+    # con.commit()
     ids = get_ids(from_file=IDS_FILE)
     df = assign_passwords(from_table=TABLE_FILE, to_table=table_with_passwords, passwords=ids)
     ministry_df = assign_passwords(
@@ -116,5 +144,5 @@ if __name__ == '__main__':
         passwords=ids[len(df):]
     )
     create_tables()
-    fill_in_tables(df, ministry_df)
+    fill_in_tables(df, ministry_df, pd.read_excel(COMPANY_TABLE_FILE, engine='openpyxl'))
     logger.info('database created!')
