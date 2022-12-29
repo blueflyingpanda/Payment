@@ -337,7 +337,7 @@ def drop_charges():
             logger.warning(f"player {student_id} does not exist")
             return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
         cur.execute("""
-                    UPDATE players SET fine=0 WHERE player_id=?;
+                    UPDATE players SET fine=0, tax_paid=1 WHERE player_id=?;
                     """, (student_id,))
         con.commit()
     logger.info(f"charges dropped for player {student_id}")
