@@ -195,7 +195,6 @@ def pay_teacher_salary(sub=None):
         logger.debug(f'max salary {MAX_AMOUNT} < {amount}')
         return jsonify(status=400, message=f"max salary is {MAX_AMOUNT}")
     tax_amount = round(amount * tax)
-    amount -= tax_amount
     receiver = request.get_json().get('receiver')
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -203,11 +202,14 @@ def pay_teacher_salary(sub=None):
                     SELECT firstname, middlename, lastname, teacher_id FROM teachers WHERE password=?;
                     """, (sub,))
         teacher = cur.fetchall()[0]
-        cur.execute("""SELECT player_id FROM players WHERE player_id=?""", (receiver,))
+        cur.execute("""SELECT player_id, tax_paid FROM players WHERE player_id=?""", (receiver,))
         player = cur.fetchall()
         if not player:
             logger.debug(f'no player with id {receiver}')
             return jsonify(status=200, message="player does not exist")
+        tax_was_paid = player[0][1]
+        if not tax_was_paid:
+            amount -= tax_amount
         cur.execute("""UPDATE players SET money=money + ?, tax_paid= CASE WHEN ? > 0 THEN 1 ELSE tax_paid END WHERE player_id=?""", (amount, tax_amount, receiver))
         con.commit()
     logger.debug(f'{teacher} paid {amount} salary to player with id {receiver}')
