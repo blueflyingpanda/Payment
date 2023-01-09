@@ -326,6 +326,15 @@ def check_player():
     return jsonify(status=200, fine=user[0])
 
 
+@app.route('/debtors', methods=['GET'])
+def get_debtors():
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT player_id, tax_paid, fine FROM players WHERE fine > 0;""")
+        users = cur.fetchall()
+    return jsonify(status=200, debtors=users)
+
+
 @app.route('/drop-charges', methods=['POST'])
 def drop_charges():
     student_id = request.get_json().get('player_id')
