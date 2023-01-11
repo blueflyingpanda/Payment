@@ -1,12 +1,12 @@
+import logging
+import sqlite3
 import sys
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-import sqlite3
-import logging
+
 import jwt
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
@@ -36,7 +36,7 @@ def check_authorization(f):
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
         try:
-            payload = jwt.decode(token, secret, algorithms=HASH_ALGO)
+            payload = jwt.decode(token, secret, algorithms=[HASH_ALGO])
         except jwt.exceptions.PyJWTError as e:
             logger.warning(str(e))
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -199,9 +199,12 @@ def pay_teacher_salary(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, teacher_id FROM teachers WHERE password=?;
+                    SELECT firstname, middlename, lastname, teacher_id, company_money FROM teachers WHERE password=?;
                     """, (sub,))
-        teacher = cur.fetchall()[0]
+        teacher = cur.fetchone()
+        if teacher[4] < amount:
+            logger.debug(f'not enough money for teacher to pay salary {teacher[4]} < {amount}')
+            return jsonify(status=400, message=f"not enough money for teacher to pay salary", company_money=teacher[4])
         cur.execute("""SELECT player_id, tax_paid FROM players WHERE player_id=?""", (receiver,))
         player = cur.fetchall()
         if not player:
@@ -210,7 +213,12 @@ def pay_teacher_salary(sub=None):
         tax_was_paid = player[0][1]
         if not tax_was_paid:
             amount -= tax_amount
-        cur.execute("""UPDATE players SET money=money + ?, tax_paid= CASE WHEN ? > 0 THEN 1 ELSE tax_paid END WHERE player_id=?""", (amount, tax_amount, receiver))
+        cur.execute(
+            """UPDATE players SET money=money + ?, tax_paid= CASE WHEN ? > 0 THEN 1 ELSE tax_paid END WHERE player_id=?""",
+            (amount, tax_amount, receiver))
+        cur.execute(
+            """UPDATE teachers SET company_money=company_money - ?, password=?""",
+            (amount, sub))
         con.commit()
     logger.debug(f'{teacher} paid {amount} salary to player with id {receiver}')
     return jsonify(status=200, message="salary paid")

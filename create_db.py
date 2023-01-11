@@ -5,7 +5,6 @@ from app import logger
 from hashlib import sha256
 
 
-
 IDS_FILE = 'ids.txt'
 TABLE_FILE = 'economic_game.xlsx'
 MINISTRY_TABLE_FILE = 'economic_game_ministers.xlsx'
@@ -53,7 +52,9 @@ def create_tables() -> None:
                     middlename VARCHAR(255) NOT NULL,
                     lastname VARCHAR(255) NOT NULL,
                     email VARCHAR(255) UNIQUE,
+                    subject VARCHAR(255),
                     money INTEGER NOT NULL,
+                    company_money INTEGER NOT NULL,
                     password VARCHAR(255) NOT NULL UNIQUE)""")
 
     cur.execute("""CREATE TABLE companies(company_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,10 +100,10 @@ def fill_in_tables(df: pd.DataFrame, ministry_df: pd.DataFrame, companies_df: pd
                         )
         else:
             cur.execute("""
-                        INSERT INTO teachers(firstname, middlename, lastname, password, money, email)
+                        INSERT INTO teachers(firstname, middlename, lastname, password, money, email, subject, company_money)
                         VALUES (?, ?, ?, ?, ?, ?) 
                         """,
-                        (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0, row['email'])
+                        (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0, row['email'], row['subject'], row['company_money'])
                         )
 
     for _, row in ministry_df.iterrows():
