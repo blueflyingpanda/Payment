@@ -101,7 +101,7 @@ def fill_in_tables(df: pd.DataFrame, ministry_df: pd.DataFrame, companies_df: pd
         else:
             cur.execute("""
                         INSERT INTO teachers(firstname, middlename, lastname, password, money, email, subject, company_money)
-                        VALUES (?, ?, ?, ?, ?, ?) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
                         """,
                         (row['firstname'], row['middlename'], row['lastname'], hashed_pass, 0, row['email'], row['subject'], row['company_money'])
                         )

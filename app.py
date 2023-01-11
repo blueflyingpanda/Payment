@@ -436,7 +436,7 @@ def get_teacher_info(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                        SELECT firstname, middlename, lastname, money, teacher_id FROM teachers WHERE password=?;
+                        SELECT firstname, middlename, lastname, money, teacher_id, subject, company_money FROM teachers WHERE password=?;
                     """, (sub,))
         user = cur.fetchall()[0]
     if not user:
