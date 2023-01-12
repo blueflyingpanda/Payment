@@ -381,6 +381,7 @@ def get_company_info(sub=None):
                     """, (company_id,))
         members = cur.fetchall()
         subs = {member[1] for member in members}
+        members = [member[0] for member in members]
         if sub not in subs:
             return jsonify(status=401, error=f"User cannot view info of company with id {company_id}")
     return jsonify(status=200, company=company, members=members)
