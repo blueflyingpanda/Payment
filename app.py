@@ -364,6 +364,7 @@ def drop_charges():
 
 
 @app.route('/company', methods=['GET'])
+@check_authorization
 def get_company_info():
     company_id = request.args.get('company_id')
     with sqlite3.connect("payments.sqlite") as con:
@@ -375,7 +376,11 @@ def get_company_info():
         if not company:
             logger.warning(f"company {company_id} does not exist")
             return jsonify(status=NOT_FOUND, message="company does not exist"), NOT_FOUND
-    return jsonify(status=200, company=company)
+        cur.execute("""
+                    SELECT player_id FROM players WHERE company=?;
+                    """, (company_id,))
+        members=cur.fetchall()
+    return jsonify(status=200, company=company, members=members)
 
 
 @app.route('/withdraw', methods=['POST'])
