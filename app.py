@@ -502,4 +502,4 @@ def get_teacher_info(sub=None):
 
 
 if __name__ == '__main__':
-    app.run()
+    app.run(host='blueflyingpanda.github.io/')
