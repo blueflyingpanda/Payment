@@ -117,6 +117,9 @@ def pay_tax(sub=None):
 @check_authorization
 def transfer_money(sub=None):
     amount = request.get_json().get('amount')
+    if amount < 1:
+        logger.debug(f'invalid amount {amount}')
+        return jsonify(status=400, message=f"invalid amount {amount}")
     receiver = request.get_json().get('receiver')
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -147,6 +150,9 @@ def transfer_money(sub=None):
 @check_authorization
 def pay_company(sub=None):
     amount = request.get_json().get('amount')
+    if amount < 1:
+        logger.debug(f'invalid amount {amount}')
+        return jsonify(status=400, message=f"invalid amount {amount}")
     receiver = request.get_json().get('company')
     is_teacher = request.get_json().get('isTeacher')
     with sqlite3.connect("payments.sqlite") as con:
@@ -194,6 +200,9 @@ def pay_teacher_salary(sub=None):
     if amount > MAX_AMOUNT:
         logger.debug(f'max salary {MAX_AMOUNT} < {amount}')
         return jsonify(status=400, message=f"max salary is {MAX_AMOUNT}")
+    if amount < 1:
+        logger.debug(f'invalid amount {amount}')
+        return jsonify(status=400, message=f"invalid amount {amount}")
     tax_amount = round(amount * tax)
     receiver = request.get_json().get('receiver')
     with sqlite3.connect("payments.sqlite") as con:
@@ -325,7 +334,7 @@ def check_player():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT fine FROM players WHERE player_id=?;
+                    SELECT fine, tax_paid FROM players WHERE player_id=?;
                     """, (student_id,))
         user = cur.fetchone()
         if not user:
@@ -338,7 +347,7 @@ def check_player():
 def get_debtors():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("""SELECT player_id, tax_paid, fine FROM players WHERE fine > 0;""")
+        cur.execute("""SELECT player_id, tax_paid, fine FROM players WHERE fine > 1;""")
         users = cur.fetchall()
     return jsonify(status=200, debtors=users)
 
@@ -392,6 +401,9 @@ def get_company_info(sub=None):
 def withdraw(sub=None):
     student_id = request.get_json().get('player_id')
     amount = request.get_json().get('amount')
+    if amount < 1:
+        logger.debug(f'invalid amount {amount}')
+        return jsonify(status=400, message=f"invalid amount {amount}")
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
@@ -423,6 +435,42 @@ def withdraw(sub=None):
                     """, (amount, student_id,))
     logger.info(f"{user} withdrew {amount}")
     return jsonify(status=200, message="successful withdrawal")
+
+
+@app.route('/deposit', methods=['POST'])
+@check_authorization
+def deposit(sub=None):
+    student_id = request.get_json().get('player_id')
+    amount = request.get_json().get('amount')
+    if amount < 1:
+        logger.debug(f'invalid amount {amount}')
+        return jsonify(status=400, message=f"invalid amount {amount}")
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+                    SELECT money, player_id FROM players WHERE player_id=?;
+                    """, (student_id,))
+        user = cur.fetchone()
+        if not user:
+            logger.warning(f"player {student_id} does not exist")
+            return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
+
+        cur.execute("""
+                    SELECT cash, minister_id FROM ministers WHERE password=?;
+                    """, (sub,))
+        minister = cur.fetchone()
+        if not minister:
+            logger.warning(f"minister does not exist")
+            return jsonify(status=NOT_FOUND, message="minister does not exist"), NOT_FOUND
+
+        cur.execute("""
+                    UPDATE ministers SET cash=cash + ?, coin=coin - ? WHERE password=?;
+                    """, (amount, amount, sub))
+        cur.execute("""
+                    UPDATE players SET money=money + ? WHERE player_id=?;
+                    """, (amount, student_id,))
+    logger.info(f"{user} deposited {amount}")
+    return jsonify(status=200, message="successful deposit")
 
 
 @app.route('/player', methods=['GET'])
