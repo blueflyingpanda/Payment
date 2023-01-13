@@ -9,7 +9,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__, instance_relative_config=True)
-app.config.from_pyfile('config.py')
+app.config['ALLOWED_HOST'] = ['blueflyingpanda.github.io']
 CORS(app)
 
 UNAUTHORIZED = 401
