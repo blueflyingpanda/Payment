@@ -8,8 +8,9 @@ import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-app = Flask(__name__)
+app = Flask(__name__, instance_relative_config=True)
 CORS(app)
+app.config.from_pyfile('config.py')
 
 UNAUTHORIZED = 401
 NOT_FOUND = 404
@@ -502,4 +503,4 @@ def get_teacher_info(sub=None):
 
 
 if __name__ == '__main__':
-    app.run(host='blueflyingpanda.github.io/')
+    app.run()
