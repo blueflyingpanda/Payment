@@ -9,8 +9,8 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__, instance_relative_config=True)
-CORS(app)
 app.config.from_pyfile('config.py')
+CORS(app)
 
 UNAUTHORIZED = 401
 NOT_FOUND = 404
