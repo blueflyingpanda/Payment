@@ -5,12 +5,13 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import jwt
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, abort
 from flask_cors import CORS
 
 app = Flask(__name__, instance_relative_config=True)
-app.config['ALLOWED_HOST'] = ['blueflyingpanda.github.io']
 CORS(app)
+
+TRUSTED_IPS = ['blueflyingpanda.github.io']
 
 UNAUTHORIZED = 401
 NOT_FOUND = 404
@@ -500,6 +501,12 @@ def get_teacher_info(sub=None):
     if not user:
         return jsonify(status=NOT_FOUND, message=["not a teacher"]), NOT_FOUND
     return jsonify(status=200, teacher=user)
+
+
+@app.before_request
+def limit_remote_addr():
+    if request.remote_addr not in TRUSTED_IPS:
+        abort(418)
 
 
 if __name__ == '__main__':
