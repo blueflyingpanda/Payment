@@ -503,11 +503,5 @@ def get_teacher_info(sub=None):
     return jsonify(status=200, teacher=user)
 
 
-@app.before_request
-def limit_remote_addr():
-    if request.remote_addr not in TRUSTED_IPS:
-        abort(418)
-
-
 if __name__ == '__main__':
     app.run()
