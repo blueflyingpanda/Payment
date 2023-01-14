@@ -5,10 +5,10 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import jwt
-from flask import Flask, jsonify, request, abort
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-app = Flask(__name__, instance_relative_config=True)
+app = Flask(__name__)
 CORS(app)
 
 TRUSTED_IPS = ['blueflyingpanda.github.io']
@@ -342,7 +342,7 @@ def check_player():
         if not user:
             logger.warning(f"player {student_id} does not exist")
             return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
-    return jsonify(status=200, fine=user[0])
+    return jsonify(status=200, fine=user[0], tax_paid=user[1])
 
 
 @app.route('/debtors', methods=['GET'])
