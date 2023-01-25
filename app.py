@@ -36,7 +36,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # time.sleep(1)
+        time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -287,10 +287,11 @@ def add_employee(sub=None):
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
         company = founder[0]
         cur.execute("""SELECT minister_id FROM ministers WHERE password=?""", (signature,))
-        minister = cur.fetchall()[0]
+        minister = cur.fetchone()
         if not minister:
             logger.warning(f'wrong minister signature')
             return jsonify(status=400, message="wrong minister signature"), 400
+        minister = minister[0]
         cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company IS NULL""", (employee_id,))
         employee = cur.fetchone()
         if not employee:
@@ -316,10 +317,11 @@ def remove_employee(sub=None):
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
         company = founder[0]
         cur.execute("""SELECT minister_id FROM ministers WHERE password=?""", (signature,))
-        minister = cur.fetchall()[0]
+        minister = cur.fetchone()
         if not minister:
             logger.warning(f'wrong minister signature')
             return jsonify(status=400, message="wrong minister signature"), 400
+        minister = minister[0]
         cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company=?""", (employee_id, company))
         employee = cur.fetchone()
         if not employee:
@@ -342,7 +344,7 @@ def check_player(sub=None):
             FROM ministers 
             WHERE password=? AND (field_activity="economic" OR field_activity="judgement");
             """, (sub,))
-        minister = cur.fetchall()[0]
+        minister = cur.fetchall()
         if not minister:
             logger.warning(f"minister does not exist")
             return jsonify(status=NOT_FOUND, message="minister does not exist"), NOT_FOUND
@@ -377,7 +379,7 @@ def drop_charges(sub=None):
                     FROM ministers 
                     WHERE password=? AND (field_activity="economic" OR field_activity="judgement");
                     """, (sub,))
-        minister = cur.fetchall()[0]
+        minister = cur.fetchall()
         if not minister:
             logger.warning(f"minister does not exist")
             return jsonify(status=NOT_FOUND, message="minister does not exist"), NOT_FOUND
@@ -528,7 +530,7 @@ def clear_logs(sub=None):
         cur.execute("""
                     SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?
                     """, (sub,))
-        minister = cur.fetchall()[0]
+        minister = cur.fetchall()
     if not minister:
         return jsonify(status=NOT_FOUND, message=["not a minister"]), NOT_FOUND
     with open("history.log", mode="wb"):
