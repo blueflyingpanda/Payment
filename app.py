@@ -36,7 +36,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        time.sleep(1)
+        # time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -347,19 +347,15 @@ def get_teacher_info(sub=None):
     return jsonify(status=200, teacher=user)
 
 
-@app.route('/teacher-salary', methods=['POST'])  # {"amount": 12, "receiver": 9}
+@app.route('/teacher-salary', methods=['POST'])  # TODO: убрать счёт предприятия у учителя (мод на бесконечные деньги, юху)
 @check_authorization
 def pay_teacher_salary(sub=None):
     MAX_AMOUNT = 30
     MIN_AMOUNT = 10
     tax = 0.1
     amount = request.get_json().get('amount')
-    if amount > MAX_AMOUNT:
-        logger.debug(f'max salary {MAX_AMOUNT} < {amount}')
-        return jsonify(status=400, message=f"max salary is {MAX_AMOUNT}")
-    if amount < MIN_AMOUNT:
-        logger.debug(f'min salary {MIN_AMOUNT} < {amount}')
-        return jsonify(status=400, message=f"min salary is {MIN_AMOUNT}")
+    if amount > MAX_AMOUNT or amount < MIN_AMOUNT:
+        return jsonify(status=400, message=f"invalid salary")
     tax_amount = round(amount * tax)
     receiver = request.get_json().get('receiver')
     with sqlite3.connect("payments.sqlite") as con:
@@ -434,7 +430,7 @@ def check_player(sub=None):
 def get_debtors(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("""SELECT player_id, tax_paid, fine FROM players WHERE fine > 1;""")
+        cur.execute("""SELECT firstname, lastname, player_id, tax_paid, fine FROM players WHERE fine > 1;""")
         users = cur.fetchall()
     return jsonify(status=200, debtors=users)
 
