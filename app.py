@@ -96,6 +96,17 @@ def authenticate_user():
 
 
 
+@app.route("/firm-diagram", methods=["GET"])
+def get_firm_diagram():
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("SELECT name, profit FROM companies WHERE private=1")
+        companies = cur.fetchall()
+        cur.execute("SELECT SUM(profit) FROM companies")
+        profit_sum = cur.fetchone()[0]
+
+    return jsonify(status=200, companies=companies, sum=profit_sum)
+
 @app.route('/player', methods=['GET'])
 @check_authorization
 def get_player_info(sub=None):
@@ -211,7 +222,10 @@ def pay_company(sub=None):
         if user[0] < amount:
             return jsonify(status=400, message="not enough money to pay")
 
-        cur.execute("""SELECT name FROM companies WHERE name=? AND private=1""", (receiver,))
+        if role == "player":
+            cur.execute("""SELECT name FROM companies WHERE name=?""", (receiver,))
+        elif role == "teacher" or role == "mvd":
+            cur.execute("""SELECT name FROM companies WHERE name=? AND private=1""", (receiver,))
         company = cur.fetchone()
         if not company:
             return jsonify(status=400, message="no such company")
@@ -230,6 +244,7 @@ def pay_company(sub=None):
                         """, (amount, sub))
 
         cur.execute("""UPDATE companies SET money=money + ? WHERE name=?""", (amount, receiver))
+        cur.execute("""UPDATE companies SET profit=profit + ? WHERE name=?""", (amount, receiver))
         con.commit()
 
     userLog = f"{user[2]} {user[3]}, ID: {user[1]}"
@@ -637,6 +652,15 @@ def clear_logs(sub=None):
     logger.info(f"Логи были очищены министром экономики {minister}")
     return jsonify(status=200, message="logs cleared")
 
+
+
+def update_db():
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + 1 ELSE fine END")
+        cur.execute("UPDATE players SET tax_paid=0")
+        con.commit()
+    logger.info('ПЕРИОДИЧЕСКОЕ ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ УСПЕШНО!')
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

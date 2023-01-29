@@ -28,7 +28,6 @@ def update_db():
         cur = con.cursor()
         cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + 1 ELSE fine END")
         cur.execute("UPDATE players SET tax_paid=0")
-        cur.execute("UPDATE teachers SET money=money + ?", (TEACHER_SALARY * (1 - GENERAL_TAX),))
         con.commit()
     logger.info('Database updated!')
 
