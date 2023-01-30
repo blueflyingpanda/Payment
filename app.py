@@ -304,12 +304,15 @@ def pay_company_salary(sub=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT salary, money FROM companies WHERE company_id=?""", (company,))
-        salary = cur.fetchone()
-        if not salary:
+        cur.execute("""SELECT salary, money, tax_paid FROM companies WHERE company_id=?""", (company,))
+        try:
+            salary = cur.fetchone()
+            salary, money, tax = salary[0], salary[1], salary[2]
+            if tax:
+                INCOME_TAX = 0
+        except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
 
-        salary, money = salary[0], salary[1]
         cur.execute("""SELECT COUNT(player_id)
                     FROM players INNER JOIN companies c on c.company_id = players.company
                     WHERE company = ? """, (company,))
@@ -322,6 +325,7 @@ def pay_company_salary(sub=None):
                     FROM players INNER JOIN companies c on c.company_id = players.company
                     WHERE company = ? )""", (round(salary * (1 - INCOME_TAX)), company))
         cur.execute("""UPDATE companies SET money = money - ? WHERE company_id=?""", (salary * employees, company))
+        cur.execute("""UPDATE companies SET tax_paid=1 WHERE company_id=?""", (company,))
         con.commit()
 
     logger.debug(f'Зарплаты компании {company} были выплачены владельцем фирмы {founder}')
@@ -329,7 +333,7 @@ def pay_company_salary(sub=None):
 
 
 
-@app.route('/add-employee', methods=['POST'])  # {"signature": "36deacb32d93988f9b8a0cd06b56af05144b6a17eb40f049d7ca1acef8a4e055", "employee": 12}
+@app.route('/add-employee', methods=['POST'])
 @check_authorization
 def add_employee(sub=None):
     signature = request.get_json().get('signature')
@@ -363,7 +367,7 @@ def add_employee(sub=None):
 
 
 
-@app.route('/remove-employee', methods=['POST'])  # {"signature": "36deacb32d93988f9b8a0cd06b56af05144b6a17eb40f049d7ca1acef8a4e055", "employee": 12}
+@app.route('/remove-employee', methods=['POST'])
 @check_authorization
 def remove_employee(sub=None):
     signature = request.get_json().get('signature')
@@ -377,7 +381,7 @@ def remove_employee(sub=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT minister_id FROM ministers WHERE password=?""", (signature,))
+        cur.execute("""SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
         try:
             minister = cur.fetchone()
             minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[3]}"
