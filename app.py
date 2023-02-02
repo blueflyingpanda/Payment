@@ -15,10 +15,10 @@ import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-TRUSTED_IPS = ['https://blueflyingpanda.github.io/PaymentSite/']
+TRUSTED_IPS = ["https://blueflyingpanda.github.io"]
 
 app = Flask(__name__)
-CORS(app, origins=TRUSTED_IPS, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
+CORS(app, resources={r"/*": {"origins": TRUSTED_IPS}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
 
 
 UNAUTHORIZED = 401
