@@ -8,9 +8,6 @@ import sys
 import time
 from threading import Thread
 import base64
-from aiogram import Bot, types
-from aiogram.dispatcher import Dispatcher
-from aiogram.utils import executor
 # from PIL import Image
 # from PIL.ExifTags import TAGS
 
@@ -18,10 +15,15 @@ import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)
+TRUSTED_IPS = ['https://blueflyingpanda.github.io/PaymentSite/']
 
-TRUSTED_IPS = ['blueflyingpanda.github.io']
+app = Flask(__name__)
+cors = CORS(app, resources={
+    r"/*": {
+        "origins": TRUSTED_IPS,
+    }
+})
+
 
 UNAUTHORIZED = 401
 NOT_FOUND = 404
