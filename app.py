@@ -149,6 +149,7 @@ def get_player_info(sub=None):
         user = cur.fetchone()
     if not user:
         return jsonify(status=NOT_FOUND, message=["not a player"]), NOT_FOUND
+
     return jsonify(status=200, player=user)
 
 
