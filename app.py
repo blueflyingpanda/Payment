@@ -18,10 +18,7 @@ from flask_cors import CORS
 TRUSTED_IPS = ['https://blueflyingpanda.github.io/PaymentSite/']
 
 app = Flask(__name__)
-app.config["CORS_RESOURCES"] = {r"/*": {"origins": TRUSTED_IPS,},}
-app.config["CORS_METHODS"] = ["GET", "POST", "OPTIONS", "HEAD"]
-app.config["CORS_SUPPORT_CREDENTIALS"] = True
-CORS(app)
+CORS(app, origins=TRUSTED_IPS, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
 
 
 UNAUTHORIZED = 401
