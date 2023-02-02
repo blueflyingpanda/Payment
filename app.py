@@ -1,10 +1,18 @@
-import logging
-import sqlite3
-import sys
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+import logging
+import sqlite3
+
+import os
+import sys
 import time
 from threading import Thread
+import base64
+from aiogram import Bot, types
+from aiogram.dispatcher import Dispatcher
+from aiogram.utils import executor
+# from PIL import Image
+# from PIL.ExifTags import TAGS
 
 import jwt
 from flask import Flask, jsonify, request
@@ -106,6 +114,29 @@ def get_firm_diagram():
         profit_sum = cur.fetchone()[0]
 
     return jsonify(status=200, companies=companies, sum=profit_sum)
+
+@app.route("/get-telegram-photos", methods=["GET"])
+def get_photos():
+    path = os.listdir("telegrambot/photos")
+    if not path:
+        return jsonify(status=NOT_FOUND, message="photos doesn't exist"), NOT_FOUND
+
+    if len(path) > 15:
+        for i in range(5):
+            os.remove(f"telegrambot/photos/{list(reversed(path))[i]}")
+        path = os.listdir("telegrambot/photos")
+
+    images = []
+    count = 0
+    for filename in path:
+        with open(f"telegrambot/photos/{filename}", "rb") as f:
+            images.append(base64.b64encode(f.read()))
+            images[count] = images[count].decode("utf-8")
+            count += 1
+
+    return jsonify(status=200, images=images)
+
+
 
 @app.route('/player', methods=['GET'])
 @check_authorization
