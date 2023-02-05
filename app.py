@@ -2,11 +2,10 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps
 import logging
 import sqlite3
+import sys
 
 import os
-import sys
 import time
-from threading import Thread
 import base64
 # from PIL import Image
 # from PIL.ExifTags import TAGS
@@ -42,7 +41,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        time.sleep(1)
+        # time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -51,15 +50,16 @@ def check_authorization(f):
         except jwt.exceptions.PyJWTError as e:
             logger.warning(str(e) + " (ОШИБКА АВТОРИЗАЦИИ)")
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-        return f(*args, sub=payload['sub'], **kwargs)
+        return f(*args, sub=payload['sub'], role=payload['role'], **kwargs)
 
     return wrapper
 
-def get_auth_token(password: str) -> str:
+def get_auth_token(password: str, role: str) -> str:
     current_time = datetime.now(tz=timezone.utc)
     token = jwt.encode(
         {
             "sub": password,
+            "role": role,
             "iat": current_time.timestamp(),
             "exp": (current_time + timedelta(days=1)).timestamp()
         },
@@ -75,7 +75,7 @@ def authenticate_user():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, money, company, player_id FROM players WHERE password=?;
+                    SELECT firstname, lastname, grade, money, company, player_id FROM players WHERE password=?;
                     """, (password,))
         user = cur.fetchone()
         if not user:
@@ -86,18 +86,18 @@ def authenticate_user():
             user = cur.fetchone()
         if not user:
             cur.execute("""
-                        SELECT firstname, middlename, lastname, cash, minister_id, field_activity FROM ministers WHERE password=?;
+                        SELECT firstname, lastname, cash, minister_id, field_activity FROM ministers WHERE password=?;
                         """, (password,))
             try:
                 user = cur.fetchone()
-                role = f"{user[5]}"
+                role = f"{user[4]}"
             except TypeError:
                 return jsonify(status=UNAUTHORIZED, message=["wrong password"]), UNAUTHORIZED
 
-    token = get_auth_token(password)
+    token = get_auth_token(password, role)
     if sys.version_info.minor < 10:
         token = token.decode('utf-8')  # noqa
-    logger.debug(f'{user} вошёл в аккаунт')
+    logger.info(f'{user} вошёл в аккаунт')
     return jsonify(status=200, message=user, role=role, auth_token=token)
 
 
@@ -116,11 +116,12 @@ def get_firm_diagram():
 @app.route("/get-telegram-photos", methods=["GET"])
 def get_photos():
     path = os.listdir("telegrambot/photos")
+    path.sort()
     if not path:
         return jsonify(status=NOT_FOUND, message="photos doesn't exist"), NOT_FOUND
 
     if len(path) > 15:
-        for i in range(5):
+        for i in range(0, 6):
             os.remove(f"telegrambot/photos/{list(reversed(path))[i]}")
         path = os.listdir("telegrambot/photos")
 
@@ -138,11 +139,11 @@ def get_photos():
 
 @app.route('/player', methods=['GET'])
 @check_authorization
-def get_player_info(sub=None):
+def get_player_info(sub=None, role=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, money, company, player_id, fine, tax_paid, founder FROM players WHERE password=?;
+                    SELECT firstname, lastname, grade, money, company, player_id, fine, tax_paid, founder FROM players WHERE password=?;
                     """, (sub,))
         user = cur.fetchone()
     if not user:
@@ -151,56 +152,58 @@ def get_player_info(sub=None):
     return jsonify(status=200, player=user)
 
 
-@app.route('/paytax', methods=['POST'])
+@app.route('/paytax', methods=['GET'])
 @check_authorization
-def pay_tax(sub=None):
+def pay_tax(sub=None, role=None):
     TAX_AMOUNT = 10
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, money, tax_paid, fine, player_id FROM players WHERE password=?;
+                    SELECT firstname, lastname, money, tax_paid, fine, player_id FROM players WHERE password=?;
                     """, (sub,))
         user = cur.fetchone()
-        if user[3] < TAX_AMOUNT:
+        if user[2] < TAX_AMOUNT:
             return jsonify(status=400, message="not enough money to pay tax", fine=user[5])
-        if user[4]:  # if tax has already been paid
+        if user[3]:  # if tax has already been paid
             return jsonify(status=400, message="taxes have already been paid", fine=user[5])
         cur.execute("""
                     UPDATE players SET money=money - ?, tax_paid=1 WHERE password=?;
                     """, (TAX_AMOUNT, sub))
         con.commit()
 
-    userLog = f"{user[2]} {user[0]} {user[1]}, ID: {user[6]}"
-    logger.debug(f'Игрок {userLog} уплатил налоги')
+    userLog = f"{user[1]} {user[0]}, PLAYER_ID: {user[5]}"
+    logger.info(f'Игрок {userLog} уплатил налоги')
     return jsonify(status=200, message="taxes are paid", fine=user[5])
 
 
 @app.route('/transfer', methods=['POST'])  # {"amount": 42, "receiver": 21}
 @check_authorization
-def transfer_money(sub=None):
+def transfer_money(sub=None, role=None):
     amount = request.get_json().get('amount')
     role = request.get_json().get('role')
+    receiver = request.get_json().get('receiver')
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
-    receiver = request.get_json().get('receiver')
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
 
         if role == "player":
             cur.execute("""
-                        SELECT firstname, middlename, lastname, money, player_id FROM players WHERE password=?;
+                        SELECT firstname, lastname, money, player_id FROM players WHERE password=?;
                         """, (sub,))
-        elif role == "mvd":
+            us_role, us_id = "Игрок", "PLAYER_ID"
+        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
             cur.execute("""
-                        SELECT firstname, middlename, lastname, cash, minister_id FROM ministers WHERE password=?;
+                        SELECT firstname, lastname, money, minister_id FROM ministers WHERE password=?;
                         """, (sub,))
+            us_role, us_id = "Министр", "MINISTER_ID"
         user = cur.fetchone()
 
         if user[3] < amount:
             return jsonify(status=400, message="not enough money to transfer")
 
-        cur.execute("""SELECT firstname, middlename, lastname, player_id FROM players WHERE player_id=?""", (receiver,))
+        cur.execute("""SELECT firstname, lastname, player_id FROM players WHERE player_id=?""", (receiver,))
         receiver_user = cur.fetchone()
         if not receiver_user:
             return jsonify(status=400, message="receiver does not exist")
@@ -212,22 +215,22 @@ def transfer_money(sub=None):
             cur.execute("""
                         UPDATE players SET money=money - ? WHERE password=?;
                         """, (amount, sub))
-        elif role == "mvd":
+        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
             cur.execute("""
-                        UPDATE ministers SET cash=cash - ? WHERE password=?;
+                        UPDATE ministers SET money=money - ? WHERE password=?;
                         """, (amount, sub))
         con.commit()
 
-    userLog = f"{user[2]} {user[0]} {user[1]}, ID: {user[4]}"
-    receiverLog = f"{receiver_user[2]} {receiver_user[0]} {receiver_user[1]} ID: {receiver_user[3]}"
-    logger.debug(f'Игрок {userLog} отправил сумму: ({amount}) игроку {receiverLog}')
-    return jsonify(status=200, message="money transferred")
+    userLog = f"{user[1]} {user[0]}, {us_id}: {user[3]}"
+    receiverLog = f"{receiver_user[1]} {receiver_user[0]}, PLAYER_ID: {receiver_user[2]}"
+    logger.info(f'{us_role} {userLog} отправил {amount} тлц игроку {receiverLog}')
+    return jsonify(status=200, message="money transfered")
 
 
 
 @app.route('/pay', methods=['POST'])  # {"amount": 12, "company": "bumblebee", isTeacher: false}
 @check_authorization
-def pay_company(sub=None):
+def pay_company(sub=None, role=None):
     amount = request.get_json().get('amount')
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
@@ -238,23 +241,26 @@ def pay_company(sub=None):
         cur = con.cursor()
         if role == "player":
             cur.execute("""
-                        SELECT money, player_id, firstname, middlename, lastname FROM players WHERE password=?;
+                        SELECT money, player_id, firstname, lastname FROM players WHERE password=?;
                         """, (sub,))
+            us_role, us_id = "Игрок", "PLAYER_ID"
         elif role == "teacher":
             cur.execute("""
                         SELECT money, teacher_id, firstname, middlename FROM teachers WHERE password=?;
                         """, (sub,))
-        elif role == "mvd":
+            us_role, us_id = "Учитель", "TEACHER_ID"
+        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
             cur.execute("""
-                        SELECT cash, minister_id, firstname, middlename, lastname FROM ministers WHERE password=?;
+                        SELECT money, minister_id, firstname, lastname FROM ministers WHERE password=?;
                         """, (sub,))
+            us_role, us_id = "Министр", "MINISTER_ID"
         user = cur.fetchone()
         if user[0] < amount:
             return jsonify(status=400, message="not enough money to pay")
 
-        if role == "player":
+        if role != "teacher":
             cur.execute("""SELECT name FROM companies WHERE name=?""", (receiver,))
-        elif role == "teacher" or role == "mvd":
+        else:
             cur.execute("""SELECT name FROM companies WHERE name=? AND private=1""", (receiver,))
         company = cur.fetchone()
         if not company:
@@ -268,25 +274,24 @@ def pay_company(sub=None):
             cur.execute("""
                         UPDATE teachers SET money=money - ? WHERE password=?;
                         """, (amount, sub))
-        elif role == "mvd":
+        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
             cur.execute("""
-                        UPDATE ministers SET cash=cash - ? WHERE password=?;
+                        UPDATE ministers SET money=money - ? WHERE password=?;
                         """, (amount, sub))
 
         cur.execute("""UPDATE companies SET money=money + ? WHERE name=?""", (amount, receiver))
         cur.execute("""UPDATE companies SET profit=profit + ? WHERE name=?""", (amount, receiver))
         con.commit()
 
-    userLog = f"{user[2]} {user[3]}, ID: {user[1]}"
-    receiverLog = receiver[0]
-    logger.debug(f'Пользователь {user} отправил сумму: ({amount}) компании {receiverLog}')
+    userLog = f"{user[3]} {user[2]}, {us_id}: {user[1]}"
+    logger.info(f'{us_role} {userLog} отправил {amount} тлц фирме {receiver}')
     return jsonify(status=200, message="money paid")
 
 
 
 @app.route('/company', methods=['GET'])
 @check_authorization
-def get_company_info(sub=None):
+def get_company_info(sub=None, role=None):
     company_id = request.args.get('company_id')
 
     with sqlite3.connect("payments.sqlite") as con:
@@ -303,7 +308,7 @@ def get_company_info(sub=None):
                     """, (company_id,))
         members = cur.fetchall()
         subs = {member[1] for member in members}
-        members = [member[2] + " " + member[3] + " (ID: " + str(member[0]) + ")" for member in members]
+        members = [member[2] + " " + member[3] + ", PLAYER_ID: " + str(member[0]) for member in members]
 
         if sub not in subs:
             return jsonify(status=401, error=f"User cannot view info of company with id {company_id}")
@@ -317,55 +322,102 @@ def get_company_info(sub=None):
 
 
 
+@app.route("/company-paytax", methods=["GET"])
+@check_authorization
+def company_tax(sub=None, role=None):
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+                    SELECT company, firstname, lastname, player_id FROM players WHERE password=? AND founder=1 AND company NOT NULL
+                    """, (sub,))
+        try:
+            company = cur.fetchone()
+            founder = f"{company[2]} {company[1]}, PLAYER_ID: {company[3]}"
+            company = company[0]
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+        
+        cur.execute("""SELECT tax_paid, tax, revenue, money FROM companies WHERE company_id=?""", (company,))
+        try:
+            tax_paid = cur.fetchone()
+            tax_paid, tax, revenue, money, = tax_paid[0], tax_paid[1], tax_paid[2], tax_paid[3]
+            tax_amount = (revenue / 100) * tax
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
+
+        
+        if tax_paid:
+            return jsonify(status=400, message="taxes have already been paid")
+        if money < tax_amount:
+            return jsonify(status=400, message="not enough money to pay taxes", tax_amount=tax_amount)
+        
+        cur.execute("""
+                    UPDATE companies SET money=money - ?, tax_paid=1 WHERE company_id=?;
+                    """, (tax_amount, company,))
+    
+    logger.info(f"Налоги фирмы {company} были уплачены её владельцем {founder}")
+    return jsonify(status=200, message="taxes are paid")
+
+
+
 @app.route('/company-salary', methods=['POST'])
 @check_authorization
-def pay_company_salary(sub=None):
-    INCOME_TAX = 0.1
+def pay_company_salary(sub=None, role=None):
+    salary = request.get_json().get('salary')
+    employees = request.get_json().get('employees')
+    print(employees)
+    if salary < 1:
+        return jsonify(status=400, message=f"invalid salary {salary}")
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT company, firstname, middlename, lastname, player_id FROM players WHERE password=? AND founder=1 AND company NOT NULL
+                    SELECT company, firstname, lastname, player_id FROM players WHERE password=? AND founder=1 AND company NOT NULL
                     """, (sub,))
         try:
             company = cur.fetchone()
-            founder = f"{company[1]} {company[3]} {company[2]}, ID: {company[4]}"
+            founder = f"{company[2]} {company[1]}, PLAYER_ID: {company[3]}"
             company = company[0]
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT salary, money, tax_paid FROM companies WHERE company_id=?""", (company,))
+        cur.execute("""SELECT money, tax_paid FROM companies WHERE company_id=?""", (company,))
         try:
-            salary = cur.fetchone()
-            salary, money, tax = salary[0], salary[1], salary[2]
-            if tax:
-                INCOME_TAX = 0
+            money = cur.fetchone()
+            money, tax_paid = money[0], money[1]
+            if not tax_paid:
+                return jsonify(status=400, message="tax aren't paid")
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
 
-        cur.execute("""SELECT COUNT(player_id)
-                    FROM players INNER JOIN companies c on c.company_id = players.company
-                    WHERE company = ? """, (company,))
-        employees = cur.fetchone()[0]
-        if money < salary * employees:
-            return jsonify(status=400, message="not enough money"), 400
-
+        if money < salary * len(employees):
+            return jsonify(status=400, message="not enough money")
         cur.execute("""
-                    UPDATE players SET money = money + ? WHERE player_id IN (SELECT player_id
-                    FROM players INNER JOIN companies c on c.company_id = players.company
-                    WHERE company = ? )""", (round(salary * (1 - INCOME_TAX)), company))
-        cur.execute("""UPDATE companies SET money = money - ? WHERE company_id=?""", (salary * employees, company))
-        cur.execute("""UPDATE companies SET tax_paid=1 WHERE company_id=?""", (company,))
-        con.commit()
+                    SELECT player_id FROM players WHERE company=?;
+                    """, (company,))
+        members = [member[0] for member in cur.fetchall()]
+        for employee in employees:
+            if not employee in members:
+                return jsonify(status=400, message="there is no employee in company")
 
-    logger.debug(f'Зарплаты компании {company} были выплачены владельцем фирмы {founder}')
+        for employee in employees:
+            cur.execute("""
+                        UPDATE companies SET money=money - ? WHERE company_id=?;
+                        """, (salary, company,))
+            cur.execute("""
+                        UPDATE players SET money=money + ? WHERE player_id=?;
+                        """, (salary, employee,))
+        
+
+    employeesLog = [f"{i}, " for i in employees]
+    logger.info(f'Зарплаты фирмы {company} в размере {salary} тлц были выплачены сотрудникам {employeesLog} её владельцем {founder}')
     return jsonify(status=200, message="salary paid")
 
 
 
 @app.route('/add-employee', methods=['POST'])
 @check_authorization
-def add_employee(sub=None):
+def add_employee(sub=None, role=None):
     signature = request.get_json().get('signature')
     employee_id = request.get_json().get('employee')
 
@@ -377,10 +429,10 @@ def add_employee(sub=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
         try:
             minister = cur.fetchone()
-            minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[3]}"
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
         except TypeError:
             return jsonify(status=400, message="wrong minister signature"), 400
 
@@ -392,14 +444,14 @@ def add_employee(sub=None):
         cur.execute("""UPDATE players SET company = ? WHERE player_id=?""", (company, employee_id))
         con.commit()
 
-    logger.debug(f'Игрок {employee_id} был нанят в компанию {company} министром экономики {minister}')
+    logger.info(f'Игрок c PLAYER_ID: {employee_id} был нанят в фирму {company} министром экономики {minister}')
     return jsonify(status=200, message="player was added to the company")
 
 
 
 @app.route('/remove-employee', methods=['POST'])
 @check_authorization
-def remove_employee(sub=None):
+def remove_employee(sub=None, role=None):
     signature = request.get_json().get('signature')
     employee_id = request.get_json().get('employee')
 
@@ -411,10 +463,10 @@ def remove_employee(sub=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
         try:
             minister = cur.fetchone()
-            minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[3]}"
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
         except TypeError:
             return jsonify(status=400, message="wrong minister signature"), 400
 
@@ -426,14 +478,14 @@ def remove_employee(sub=None):
         cur.execute("""UPDATE players SET company = NULL WHERE player_id=?""", (employee_id,))
         con.commit()
 
-    logger.debug(f'Игрок {employee_id} был уволен из компании {company} министром экономики {minister}')
+    logger.info(f'Игрок с PLAYER_ID: {employee_id} был уволен из фирмы {company} министром экономики {minister}')
     return jsonify(status=200, message="player was removed from the company")
 
 
 
 @app.route('/teacher', methods=['GET'])
 @check_authorization
-def get_teacher_info(sub=None):
+def get_teacher_info(sub=None, role=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
@@ -447,9 +499,9 @@ def get_teacher_info(sub=None):
 
 
 
-@app.route('/teacher-salary', methods=['POST'])  # TODO: убрать счёт предприятия у учителя (мод на бесконечные деньги, юху)
+@app.route('/teacher-salary', methods=['POST'])
 @check_authorization
-def pay_teacher_salary(sub=None):
+def pay_teacher_salary(sub=None, role=None):
     MAX_AMOUNT = 30
     MIN_AMOUNT = 10
     TAX = 0.1
@@ -465,7 +517,7 @@ def pay_teacher_salary(sub=None):
                     SELECT firstname, middlename, teacher_id FROM teachers WHERE password=?;
                     """, (sub,))
         teacher = cur.fetchone()
-        teacher = f"{teacher[1]} {teacher[0]}, ID: {teacher[2]}"
+        teacher = f"{teacher[1]} {teacher[0]}, TEACHER_ID: {teacher[2]}"
 
         cur.execute("""SELECT player_id, tax_paid FROM players WHERE player_id=?""", (receiver,))
         player = cur.fetchone()
@@ -481,18 +533,18 @@ def pay_teacher_salary(sub=None):
             (amount, tax_amount, receiver))
         con.commit()
 
-    logger.debug(f'Учитель {teacher} выплатил зарплату: ({amount}) игроку с ИНН: ({receiver})')
+    logger.info(f'Учитель {teacher} выплатил зарплату: ({amount}) игроку с PLAYER_ID: {receiver}')
     return jsonify(status=200, message="salary paid")
 
 
 
 @app.route('/minister', methods=['GET'])
 @check_authorization
-def get_minister_info(sub=None):
+def get_minister_info(sub=None, role=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, grade, cash, minister_id, field_activity FROM ministers WHERE password=?;
+                    SELECT firstname, lastname, grade, money, cash, minister_id, field_activity FROM ministers WHERE password=?;
                     """, (sub,))
         user = cur.fetchone()
     if not user:
@@ -501,27 +553,13 @@ def get_minister_info(sub=None):
     return jsonify(status=200, minister=user)
 
 
-@app.route('/check-player', methods=['GET'])
-@check_authorization
-def check_player(sub=None):
-    student_id = request.args.get('player_id')
-
-    with sqlite3.connect("payments.sqlite") as con:
-        cur = con.cursor()
-        cur.execute("""
-                    SELECT fine, tax_paid FROM players WHERE player_id=?;
-                    """, (student_id,))
-        user = cur.fetchone()
-        if not user:
-            return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
-
-    return jsonify(status=200, fine=user[0], tax_paid=user[1])
-
-
 
 @app.route('/debtors', methods=['GET'])
 @check_authorization
-def get_debtors(sub=None):
+def get_debtors(sub=None, role=None):
+    if role != "mvd":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""SELECT firstname, lastname, player_id, tax_paid, fine FROM players WHERE fine > 1;""")
@@ -531,16 +569,40 @@ def get_debtors(sub=None):
 
 
 
+@app.route('/check-player', methods=['GET'])
+@check_authorization
+def check_player(sub=None, role=None):
+    if role != "economic" or role != "judgement":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
+    student_id = request.args.get('player_id')
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""
+                    SELECT firstname, lastname, player_id, fine, tax_paid FROM players WHERE player_id=?;
+                    """, (student_id,))
+        player = cur.fetchone()
+        if not player:
+            return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
+
+    return jsonify(status=200, player=player)
+
+
+
 @app.route('/drop-charges', methods=['POST'])
 @check_authorization
-def drop_charges(sub=None):
+def drop_charges(sub=None, role=None):
+    if role != "economic" or role != "judgement":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     student_id = request.get_json().get('player_id')
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("""SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
         minister = cur.fetchone()
-        minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[3]}"
+        minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
 
         cur.execute("""
                     SELECT fine FROM players WHERE player_id=?;
@@ -554,14 +616,17 @@ def drop_charges(sub=None):
                     """, (student_id,))
         con.commit()
 
-    logger.info(f"Штрафы и налоги аннулированы для игрока {student_id} министром {minister}")
+    logger.info(f"Штрафы и налоги аннулированы для игрока с PLAYER_ID: {student_id} министром {minister}")
     return jsonify(status=200, message="charges dropped")
 
 
 
 @app.route('/withdraw', methods=['POST'])
 @check_authorization
-def withdraw(sub=None):
+def withdraw(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     student_id = request.get_json().get('player_id')
     amount = int(request.get_json().get('amount'))
     if amount < 1:
@@ -570,15 +635,15 @@ def withdraw(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, cash, minister_id FROM ministers WHERE password=?;
+                    SELECT firstname, lastname, cash, minister_id FROM ministers WHERE password=?;
                     """, (sub,))
         minister = cur.fetchone()
         if minister[3] < amount:
             return jsonify(status=400, message="not enough cash")
-        minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[4]}"
+        minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[3]}"
 
         cur.execute("""
-                    SELECT firstname, middlename, lastname, money, player_id FROM players WHERE player_id=?;
+                    SELECT firstname, lastname, money, player_id FROM players WHERE player_id=?;
                     """, (student_id,))
         user = cur.fetchone()
         if not user:
@@ -593,14 +658,18 @@ def withdraw(sub=None):
                     UPDATE players SET money=money - ? WHERE player_id=?;
                     """, (amount, student_id,))
 
-    logger.info(f"Игрок {user} вывел сумму: ({amount}) с помощью министра экономики {minister}")
+    userLog = f"{user[1]} {user[0]}, PLAYER_ID: {user[3]}"
+    logger.info(f"Игрок {userLog} вывел {amount} тлц с помощью министра экономики {minister}")
     return jsonify(status=200, message="successful withdrawal")
 
 
 
 @app.route('/deposit', methods=['POST'])
 @check_authorization
-def deposit(sub=None):
+def deposit(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     student_id = request.get_json().get('player_id')
     amount = int(request.get_json().get('amount'))
     if amount < 1:
@@ -609,13 +678,13 @@ def deposit(sub=None):
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, cash, minister_id FROM ministers WHERE password=?;
+                    SELECT firstname, lastname, cash, minister_id FROM ministers WHERE password=?;
                     """, (sub,))
         minister = cur.fetchone()
-        minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[4]}"
+        minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[3]}"
 
         cur.execute("""
-                    SELECT firstname, middlename, lastname, money, player_id FROM players WHERE player_id=?;
+                    SELECT firstname, lastname, money, player_id FROM players WHERE player_id=?;
                     """, (student_id,))
         user = cur.fetchone()
         if not user:
@@ -628,14 +697,18 @@ def deposit(sub=None):
                     UPDATE players SET money=money + ? WHERE player_id=?;
                     """, (amount, student_id,))
 
-    logger.info(f"Игрок {user} внёс сумму: ({amount}) с помощью министра экономики {minister}")
+    userLog = f"{user[1]} {user[0]}, PLAYER_ID: {user[3]}"
+    logger.info(f"Игрок {userLog} внёс {amount} тлц с помощью министра экономики {minister}")
     return jsonify(status=200, message="successful deposit")
 
 
 
 @app.route('/ministry_economic_logs', methods=['GET'])
 @check_authorization
-def get_logs(sub=None):
+def get_logs(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     length = int(request.args.get("length"))
     debug = []
     data = {}
@@ -657,11 +730,14 @@ def get_logs(sub=None):
 
 @app.route("/minister-cash", methods=["GET"])
 @check_authorization
-def minister_cash(sub=None):
+def minister_cash(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, minister_id, cash FROM ministers WHERE password=?
+                    SELECT firstname, lastname, minister_id, cash FROM ministers WHERE password=?
                     """, (sub,))
         minister = cur.fetchone()
 
@@ -671,14 +747,17 @@ def minister_cash(sub=None):
 
 @app.route('/clear_logs', methods=["GET"])
 @check_authorization
-def clear_logs(sub=None):
+def clear_logs(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
         cur.execute("""
-                    SELECT firstname, middlename, lastname, minister_id FROM ministers WHERE password=?;
+                    SELECT firstname, lastname, minister_id FROM ministers WHERE password=?;
                     """, (sub,))
         minister = cur.fetchone()
-        minister = f"{minister[2]} {minister[0]} {minister[1]}, ID: {minister[3]}"
+        minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
 
     with open("history.log", mode="wb"):
         pass

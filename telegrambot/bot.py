@@ -6,27 +6,12 @@ from os import environ
 
 CHAT_ID = -1001758658558
 CHAT_SCHOOL_ID = -1001783533146
-token = environ.get("BOT_TOKEN")
-
+token = "6140474989:AAGKC5TMmrtRM4eFUvG60UD4IBEckx_08Cc"
+# token = environ.get("BOT_TOKEN")
 
 bot = Bot(token)
 dp = Dispatcher(bot)
 
-@dp.message_handler()
-async def private_reply(message: types.Message):
-    user_id = message.from_user.id
-
-    if message.text.lower() == "привет":
-        await bot.send_message(user_id, "И тебе привет ;p")
-    else:
-        await bot.send_message(user_id, 
-"""
-Бро, знаю, тебе очень хочется с кем-то пообщаться,
-но я не такой хороший собеседник, которым мог бы быть, 
-извини ;c
-
-@Твой тырильщик фотографий
-""")
 
 @dp.channel_post_handler(content_types=types.ContentType.PHOTO)
 async def photo_grab(message: types.Message):
