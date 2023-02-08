@@ -26,8 +26,10 @@ def update_db():
     """set tax_paid to False, set fine for not paid tax"""
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + 1 ELSE fine END")
+        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + 10 ELSE fine END")
         cur.execute("UPDATE players SET tax_paid=0")
+        cur.execute("UPDATE companies SET fine= CASE WHEN tax_paid=0 THEN fine + revenue/100*tax ELSE fine END")
+        cur.execute("UPDATE companies SET tax_paid=0")
         con.commit()
     logger.info('Database updated!')
 

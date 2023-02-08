@@ -17,7 +17,7 @@ from flask_cors import CORS
 TRUSTED_IPS = ["https://blueflyingpanda.github.io"]
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": TRUSTED_IPS}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
 
 
 UNAUTHORIZED = 401
@@ -180,7 +180,6 @@ def pay_tax(sub=None, role=None):
 @check_authorization
 def transfer_money(sub=None, role=None):
     amount = request.get_json().get('amount')
-    role = request.get_json().get('role')
     receiver = request.get_json().get('receiver')
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
@@ -200,7 +199,7 @@ def transfer_money(sub=None, role=None):
             us_role, us_id = "Министр", "MINISTER_ID"
         user = cur.fetchone()
 
-        if user[3] < amount:
+        if user[2] < amount:
             return jsonify(status=400, message="not enough money to transfer")
 
         cur.execute("""SELECT firstname, lastname, player_id FROM players WHERE player_id=?""", (receiver,))
@@ -235,7 +234,6 @@ def pay_company(sub=None, role=None):
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
     receiver = request.get_json().get('company')
-    role = request.get_json().get('role')
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -337,7 +335,7 @@ def company_tax(sub=None, role=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
         
-        cur.execute("""SELECT tax_paid, tax, revenue, money FROM companies WHERE company_id=?""", (company,))
+        cur.execute("""SELECT tax_paid, tax, revenue, money FROM companies WHERE company_id=? AND private=1""", (company,))
         try:
             tax_paid = cur.fetchone()
             tax_paid, tax, revenue, money, = tax_paid[0], tax_paid[1], tax_paid[2], tax_paid[3]
@@ -766,14 +764,6 @@ def clear_logs(sub=None, role=None):
     return jsonify(status=200, message="logs cleared")
 
 
-
-def update_db():
-    with sqlite3.connect("payments.sqlite") as con:
-        cur = con.cursor()
-        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + 1 ELSE fine END")
-        cur.execute("UPDATE players SET tax_paid=0")
-        con.commit()
-    logger.info('ПЕРИОДИЧЕСКОЕ ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ УСПЕШНО!')
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
