@@ -14,7 +14,7 @@ import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-TRUSTED_IPS = ["https://blueflyingpanda.github.io"]
+TRUSTED_IPS = ["https://bgame.school1598.ru"]
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
@@ -102,13 +102,13 @@ def authenticate_user():
 
 
 
-@app.route("/firm-diagram", methods=["GET"])
-def get_firm_diagram():
+@app.route("/company-diagram", methods=["GET"])
+def get_company_diagram():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("SELECT name, profit FROM companies WHERE private=1")
+        cur.execute("SELECT name, profit FROM companies WHERE private=0")
         companies = cur.fetchall()
-        cur.execute("SELECT SUM(profit) FROM companies")
+        cur.execute("SELECT SUM(profit) FROM companies WHERE private=0")
         profit_sum = cur.fetchone()[0]
 
     return jsonify(status=200, companies=companies, sum=profit_sum)
@@ -320,7 +320,7 @@ def get_company_info(sub=None, role=None):
 
 
 
-@app.route("/company-paytax", methods=["GET"])
+@app.route("/company-paytaxfine", methods=["GET"])
 @check_authorization
 def company_tax(sub=None, role=None):
     with sqlite3.connect("payments.sqlite") as con:
@@ -335,23 +335,25 @@ def company_tax(sub=None, role=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
         
-        cur.execute("""SELECT tax_paid, tax, revenue, money FROM companies WHERE company_id=? AND private=1""", (company,))
+        cur.execute("""SELECT tax_paid, tax, revenue, money, fine FROM companies WHERE company_id=? AND private=1""", (company,))
         try:
             tax_paid = cur.fetchone()
-            tax_paid, tax, revenue, money, = tax_paid[0], tax_paid[1], tax_paid[2], tax_paid[3]
-            tax_amount = (revenue / 100) * tax
+            tax_paid, tax, revenue, money, fine, = tax_paid[0], tax_paid[1], tax_paid[2], tax_paid[3], tax_paid[4]
+            if tax_paid and fine == 0:
+                return jsonify(status=400, message="debts have already been paid")
+            if tax_paid:
+                debt_amount = fine
+            elif fine == 0:
+                debt_amount = (revenue / 100) * tax
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
 
-        
-        if tax_paid:
-            return jsonify(status=400, message="taxes have already been paid")
-        if money < tax_amount:
-            return jsonify(status=400, message="not enough money to pay taxes", tax_amount=tax_amount)
+        if money < debt_amount:
+            return jsonify(status=400, message="not enough money to pay debts", tax_amount=debt_amount)
         
         cur.execute("""
-                    UPDATE companies SET money=money - ?, tax_paid=1 WHERE company_id=?;
-                    """, (tax_amount, company,))
+                    UPDATE companies SET money=money - ?, tax_paid=1, fine=0 WHERE company_id=?;
+                    """, (debt_amount, company,))
     
     logger.info(f"Налоги фирмы {company} были уплачены её владельцем {founder}")
     return jsonify(status=200, message="taxes are paid")
@@ -363,7 +365,7 @@ def company_tax(sub=None, role=None):
 def pay_company_salary(sub=None, role=None):
     salary = request.get_json().get('salary')
     employees = request.get_json().get('employees')
-    print(employees)
+
     if salary < 1:
         return jsonify(status=400, message=f"invalid salary {salary}")
 
@@ -379,11 +381,11 @@ def pay_company_salary(sub=None, role=None):
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
 
-        cur.execute("""SELECT money, tax_paid FROM companies WHERE company_id=?""", (company,))
+        cur.execute("""SELECT money, tax_paid, fine FROM companies WHERE company_id=?""", (company,))
         try:
             money = cur.fetchone()
-            money, tax_paid = money[0], money[1]
-            if not tax_paid:
+            money, tax_paid, fine, = money[0], money[1], money[2]
+            if not tax_paid or fine != 0:
                 return jsonify(status=400, message="tax aren't paid")
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
@@ -410,74 +412,6 @@ def pay_company_salary(sub=None, role=None):
     employeesLog = [f"{i}, " for i in employees]
     logger.info(f'Зарплаты фирмы {company} в размере {salary} тлц были выплачены сотрудникам {employeesLog} её владельцем {founder}')
     return jsonify(status=200, message="salary paid")
-
-
-
-@app.route('/add-employee', methods=['POST'])
-@check_authorization
-def add_employee(sub=None, role=None):
-    signature = request.get_json().get('signature')
-    employee_id = request.get_json().get('employee')
-
-    with sqlite3.connect("payments.sqlite") as con:
-        cur = con.cursor()
-        cur.execute("""SELECT company FROM players WHERE password=? AND founder=1 AND company NOT NULL""", (sub,))
-        try:
-            company = cur.fetchone()[0]
-        except TypeError:
-            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
-
-        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
-        try:
-            minister = cur.fetchone()
-            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
-        except TypeError:
-            return jsonify(status=400, message="wrong minister signature"), 400
-
-        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company IS NULL""", (employee_id,))
-        employee = cur.fetchone()
-        if not employee:
-            return jsonify(status=400, message="no such employee OR working in another company OR is founder"), 400
-
-        cur.execute("""UPDATE players SET company = ? WHERE player_id=?""", (company, employee_id))
-        con.commit()
-
-    logger.info(f'Игрок c PLAYER_ID: {employee_id} был нанят в фирму {company} министром экономики {minister}')
-    return jsonify(status=200, message="player was added to the company")
-
-
-
-@app.route('/remove-employee', methods=['POST'])
-@check_authorization
-def remove_employee(sub=None, role=None):
-    signature = request.get_json().get('signature')
-    employee_id = request.get_json().get('employee')
-
-    with sqlite3.connect("payments.sqlite") as con:
-        cur = con.cursor()
-        cur.execute("""SELECT company FROM players WHERE password=? AND founder=1 AND company NOT NULL""", (sub,))
-        try:
-            company = cur.fetchone()[0]
-        except TypeError:
-            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
-
-        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (signature,))
-        try:
-            minister = cur.fetchone()
-            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
-        except TypeError:
-            return jsonify(status=400, message="wrong minister signature"), 400
-
-        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company=?""", (employee_id, company))
-        employee = cur.fetchone()
-        if not employee:
-            return jsonify(status=400, message="no such employee OR not working in this company OR is founder"), 400
-
-        cur.execute("""UPDATE players SET company = NULL WHERE player_id=?""", (employee_id,))
-        con.commit()
-
-    logger.info(f'Игрок с PLAYER_ID: {employee_id} был уволен из фирмы {company} министром экономики {minister}')
-    return jsonify(status=200, message="player was removed from the company")
 
 
 
@@ -570,7 +504,7 @@ def get_debtors(sub=None, role=None):
 @app.route('/check-player', methods=['GET'])
 @check_authorization
 def check_player(sub=None, role=None):
-    if role != "economic" or role != "judgement":
+    if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
     student_id = request.args.get('player_id')
@@ -591,7 +525,7 @@ def check_player(sub=None, role=None):
 @app.route('/drop-charges', methods=['POST'])
 @check_authorization
 def drop_charges(sub=None, role=None):
-    if role != "economic" or role != "judgement":
+    if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
     student_id = request.get_json().get('player_id')
@@ -636,7 +570,7 @@ def withdraw(sub=None, role=None):
                     SELECT firstname, lastname, cash, minister_id FROM ministers WHERE password=?;
                     """, (sub,))
         minister = cur.fetchone()
-        if minister[3] < amount:
+        if minister[2] < amount:
             return jsonify(status=400, message="not enough cash")
         minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[3]}"
 
@@ -646,7 +580,7 @@ def withdraw(sub=None, role=None):
         user = cur.fetchone()
         if not user:
             return jsonify(status=NOT_FOUND, message="player does not exist"), NOT_FOUND
-        if amount > user[3]:
+        if amount > user[2]:
             return jsonify(status=400, message="not enough money to withdraw")
 
         cur.execute("""
@@ -698,6 +632,150 @@ def deposit(sub=None, role=None):
     userLog = f"{user[1]} {user[0]}, PLAYER_ID: {user[3]}"
     logger.info(f"Игрок {userLog} внёс {amount} тлц с помощью министра экономики {minister}")
     return jsonify(status=200, message="successful deposit")
+
+
+
+@app.route('/add-employee', methods=['POST'])
+@check_authorization
+def add_employee(sub=None, role=None):
+    company = request.get_json().get('company')
+    founder_id = request.get_json().get("founder")
+    employee_id = request.get_json().get('employee')
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        try:
+            minister = cur.fetchone()
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
+        except TypeError:
+            return jsonify(status=400, message="no such minister"), 400
+
+        cur.execute("""SELECT * FROM players WHERE company=? AND founder=1 AND player_id=?""", (company, founder_id,))
+        try:
+            founder = cur.fetchone()[0]
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+
+        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company IS NULL""", (employee_id,))
+        employee = cur.fetchone()
+        if not employee:
+            return jsonify(status=400, message="no such employee OR working in another company OR is founder"), 400
+
+        cur.execute("""UPDATE players SET company = ? WHERE player_id=?""", (company, employee_id,))
+        con.commit()
+
+    logger.info(f'Игрок c PLAYER_ID: {employee_id} был нанят в фирму {company} министром экономики {minister}')
+    return jsonify(status=200, message="player was added to the company")
+
+
+
+@app.route('/remove-employee', methods=['POST'])
+@check_authorization
+def remove_employee(sub=None, role=None):
+    company = request.get_json().get('company')
+    founder_id = request.get_json().get("founder")
+    employee_id = request.get_json().get('employee')
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        try:
+            minister = cur.fetchone()
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
+        except TypeError:
+            return jsonify(status=400, message="no such minister"), 400
+
+        cur.execute("""SELECT * FROM players WHERE company=? AND founder=1 AND player_id=?""", (company, founder_id,))
+        try:
+            founder = cur.fetchone()[0]
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such founder"), NOT_FOUND
+
+        cur.execute("""SELECT player_id FROM players WHERE player_id=? AND founder IS NULL AND company=?""", (employee_id, company,))
+        employee = cur.fetchone()
+        if not employee:
+            return jsonify(status=400, message="no such employee OR working in another company OR is founder"), 400
+
+        cur.execute("""UPDATE players SET company = NULL WHERE player_id=?""", (employee_id,))
+        con.commit()
+
+    logger.info(f'Игрок с PLAYER_ID: {employee_id} был уволен из фирмы {company} министром экономики {minister}')
+    return jsonify(status=200, message="player was removed from the company")
+
+
+
+@app.route('/add-player-fine', methods=["POST"])
+@check_authorization
+def add_player_fine(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
+    player_id = request.get_json().get("player")
+    fine = request.get_json().get("fine")
+    if fine < 1:
+        return jsonify(status=400, message=f"invalid fine {fine}")
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        try:
+            minister = cur.fetchone()
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
+        except TypeError:
+            return jsonify(status=400, message="no such minister"), 400
+
+        cur.execute("""
+                    SELECT * FROM players WHERE player_id=?
+                    """, (player_id,))
+        try:
+            player = cur.fetchone()
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such player"), NOT_FOUND
+
+        cur.execute("""
+                    UPDATE players SET fine = fine + ? WHERE player_id=?
+                    """, (fine, player_id,))
+    
+    logger.info(f"Штраф в размере {fine} тлц был выписан игроку с PLAYER_ID: {player_id} министром экономики {minister}")
+    return jsonify(status=200, message="fine issued")
+
+
+
+@app.route('/add-firm-fine', methods=["POST"])
+@check_authorization
+def add_firm_fine(sub=None, role=None):
+    if role != "economic":
+        return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
+
+    firm_id = request.get_json().get("firm")
+    fine = request.get_json().get("fine")
+    if fine < 1:
+        return jsonify(status=400, message=f"invalid fine {fine}")
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        try:
+            minister = cur.fetchone()
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
+        except TypeError:
+            return jsonify(status=400, message="no such minister"), 400
+
+        cur.execute("""
+                    SELECT * FROM companies WHERE company_id=?
+                    """, (firm_id,))
+        try:
+            company = cur.fetchone()
+        except TypeError:
+            return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
+
+        cur.execute("""
+                    UPDATE companies SET fine = fine + ? WHERE company_id=?
+                    """, (fine, firm_id,))
+    
+    logger.info(f"Штраф в размере {fine} тлц был выписан фирме с COMPANY_ID: {firm_id} министром экономики {minister}")
+    return jsonify(status=200, message="fine issued")
 
 
 
@@ -766,4 +844,4 @@ def clear_logs(sub=None, role=None):
 
 
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True, ssl_context=('cert.pem','key.pem')) # ssl_context=('cert.pem','key.pem')
