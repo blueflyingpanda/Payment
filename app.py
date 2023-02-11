@@ -120,18 +120,16 @@ def get_photos():
     if not path:
         return jsonify(status=NOT_FOUND, message="photos doesn't exist"), NOT_FOUND
 
-    if len(path) > 15:
-        for i in range(0, 6):
+    if len(path) > 10:
+        for i in range(0, 3):
             os.remove(f"telegrambot/photos/{list(reversed(path))[i]}")
         path = os.listdir("telegrambot/photos")
 
     images = []
-    count = 0
-    for filename in path:
+    for i, filename in enumerate(path):
         with open(f"telegrambot/photos/{filename}", "rb") as f:
             images.append(base64.b64encode(f.read()))
-            images[count] = images[count].decode("utf-8")
-            count += 1
+            images[i] = images[i].decode("utf-8")
 
     return jsonify(status=200, images=images)
 
@@ -163,9 +161,9 @@ def pay_tax(sub=None, role=None):
                     """, (sub,))
         user = cur.fetchone()
         if user[2] < TAX_AMOUNT:
-            return jsonify(status=400, message="not enough money to pay tax", fine=user[5])
+            return jsonify(status=400, message="not enough money to pay tax", fine=user[4])
         if user[3]:  # if tax has already been paid
-            return jsonify(status=400, message="taxes have already been paid", fine=user[5])
+            return jsonify(status=400, message="taxes have already been paid", fine=user[4])
         cur.execute("""
                     UPDATE players SET money=money - ?, tax_paid=1 WHERE password=?;
                     """, (TAX_AMOUNT, sub))
@@ -173,7 +171,7 @@ def pay_tax(sub=None, role=None):
 
     userLog = f"{user[1]} {user[0]}, PLAYER_ID: {user[5]}"
     logger.info(f'Игрок {userLog} уплатил налоги')
-    return jsonify(status=200, message="taxes are paid", fine=user[5])
+    return jsonify(status=200, message="taxes are paid", fine=user[4])
 
 
 @app.route('/transfer', methods=['POST'])  # {"amount": 42, "receiver": 21}
@@ -844,4 +842,4 @@ def clear_logs(sub=None, role=None):
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True, ssl_context=('cert.pem','key.pem')) # ssl_context=('cert.pem','key.pem')
+    app.run(host="0.0.0.0", port=5000, debug=True) # ssl_context=('cert.pem','key.pem')
