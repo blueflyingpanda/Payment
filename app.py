@@ -47,7 +47,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        time.sleep(1)
+        # time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -848,4 +848,4 @@ def clear_logs(sub=None, role=None):
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True) # ssl_context=('cert.pem','key.pem')
+    app.run(host="0.0.0.0", port=5000, debug=True, ssl_context=('cert.pem','key.pem')) # ssl_context=('cert.pem','key.pem')
