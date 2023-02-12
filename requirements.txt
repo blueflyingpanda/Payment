@@ -3,3 +3,4 @@ flask-cors
 pandas
 openpyxl
 pyjwt
+flask_limiter

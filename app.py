@@ -4,19 +4,24 @@ import logging
 import sqlite3
 import sys
 
-import os
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import time
+import os
 import base64
-# from PIL import Image
-# from PIL.ExifTags import TAGS
 
 import jwt
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-TRUSTED_IPS = ["https://bgame.school1598.ru"]
+TRUSTED_IPS = ["https://game.school1598.ru"]
 
 app = Flask(__name__)
+limiter = Limiter(
+        get_remote_address,
+        app=app,
+        default_limits=["2/second"],
+        storage_uri="memory://",)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
 
 
@@ -33,7 +38,8 @@ logging.basicConfig(
     filename=LOG_FILE,
     filemode='a',
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+    level=logging.DEBUG,
+    datefmt='%d.%m.%Y %H:%M:%S',
 )
 logger = logging.getLogger('rest_logger')
 
@@ -791,7 +797,7 @@ def get_logs(sub=None, role=None):
         for line in reversed(list(f)):
             if "rest_logger" in line.split(" - "):
                 line = line.split(" - ")
-                add = line[0].split(",")[0] + " " + line[3]
+                add = line[0] + " ----- " + line[3]
                 debug.append(add)
     if length > len(debug) or length == 0:
         length = len(debug)
@@ -842,4 +848,4 @@ def clear_logs(sub=None, role=None):
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True) # ssl_context=('cert.pem','key.pem')
+    app.run(host="0.0.0.0", port=5000, debug=True, ssl_context=('cert.pem','key.pem')) # ssl_context=('cert.pem','key.pem')
