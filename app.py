@@ -47,7 +47,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        # time.sleep(1)
+        time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -183,8 +183,8 @@ def pay_tax(sub=None, role=None):
 @app.route('/transfer', methods=['POST'])  # {"amount": 42, "receiver": 21}
 @check_authorization
 def transfer_money(sub=None, role=None):
-    amount = request.get_json().get('amount')
-    receiver = request.get_json().get('receiver')
+    amount = float(request.get_json().get('amount'))
+    receiver = float(request.get_json().get('receiver'))
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -234,7 +234,7 @@ def transfer_money(sub=None, role=None):
 @app.route('/pay', methods=['POST'])  # {"amount": 12, "company": "bumblebee", isTeacher: false}
 @check_authorization
 def pay_company(sub=None, role=None):
-    amount = request.get_json().get('amount')
+    amount = float(request.get_json().get('amount'))
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
     receiver = request.get_json().get('company')
@@ -343,12 +343,14 @@ def company_tax(sub=None, role=None):
         try:
             tax_paid = cur.fetchone()
             tax_paid, tax, revenue, money, fine, = tax_paid[0], tax_paid[1], tax_paid[2], tax_paid[3], tax_paid[4]
-            if tax_paid and fine == 0:
+            if tax_paid and not fine:
                 return jsonify(status=400, message="debts have already been paid")
             if tax_paid:
                 debt_amount = fine
-            elif fine == 0:
+            elif not fine:
                 debt_amount = (revenue / 100) * tax
+            else:
+                debt_amount = (revenue / 100) * tax + fine
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
 
@@ -367,7 +369,7 @@ def company_tax(sub=None, role=None):
 @app.route('/company-salary', methods=['POST'])
 @check_authorization
 def pay_company_salary(sub=None, role=None):
-    salary = request.get_json().get('salary')
+    salary = float(request.get_json().get('salary'))
     employees = request.get_json().get('employees')
 
     if salary < 1:
@@ -389,7 +391,7 @@ def pay_company_salary(sub=None, role=None):
         try:
             money = cur.fetchone()
             money, tax_paid, fine, = money[0], money[1], money[2]
-            if not tax_paid or fine != 0:
+            if not tax_paid or fine:
                 return jsonify(status=400, message="tax aren't paid")
         except TypeError:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
@@ -441,11 +443,11 @@ def pay_teacher_salary(sub=None, role=None):
     MAX_AMOUNT = 30
     MIN_AMOUNT = 10
     TAX = 0.1
-    amount = request.get_json().get('amount')
+    amount = float(request.get_json().get('amount'))
     if amount > MAX_AMOUNT or amount < MIN_AMOUNT:
         return jsonify(status=400, message=f"invalid salary")
     tax_amount = round(amount * TAX)
-    receiver = request.get_json().get('receiver')
+    receiver = float(request.get_json().get('receiver'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -511,7 +513,7 @@ def check_player(sub=None, role=None):
     if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    student_id = request.args.get('player_id')
+    student_id = float(request.args.get('player_id'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -532,7 +534,7 @@ def drop_charges(sub=None, role=None):
     if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    student_id = request.get_json().get('player_id')
+    student_id = float(request.get_json().get('player_id'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -563,8 +565,8 @@ def withdraw(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    student_id = request.get_json().get('player_id')
-    amount = int(request.get_json().get('amount'))
+    student_id = float(request.get_json().get('player_id'))
+    amount = float(request.get_json().get('amount'))
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -606,8 +608,8 @@ def deposit(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    student_id = request.get_json().get('player_id')
-    amount = int(request.get_json().get('amount'))
+    student_id = float(request.get_json().get('player_id'))
+    amount = float(request.get_json().get('amount'))
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -642,9 +644,9 @@ def deposit(sub=None, role=None):
 @app.route('/add-employee', methods=['POST'])
 @check_authorization
 def add_employee(sub=None, role=None):
-    company = request.get_json().get('company')
-    founder_id = request.get_json().get("founder")
-    employee_id = request.get_json().get('employee')
+    company = float(request.get_json().get('company'))
+    founder_id = float(request.get_json().get("founder"))
+    employee_id = float(request.get_json().get('employee'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -677,9 +679,9 @@ def add_employee(sub=None, role=None):
 @app.route('/remove-employee', methods=['POST'])
 @check_authorization
 def remove_employee(sub=None, role=None):
-    company = request.get_json().get('company')
-    founder_id = request.get_json().get("founder")
-    employee_id = request.get_json().get('employee')
+    company = float(request.get_json().get('company'))
+    founder_id = float(request.get_json().get("founder"))
+    employee_id = float(request.get_json().get('employee'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -715,8 +717,8 @@ def add_player_fine(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    player_id = request.get_json().get("player")
-    fine = request.get_json().get("fine")
+    player_id = float(request.get_json().get("player"))
+    fine = float(request.get_json().get("fine"))
     if fine < 1:
         return jsonify(status=400, message=f"invalid fine {fine}")
 
@@ -732,9 +734,8 @@ def add_player_fine(sub=None, role=None):
         cur.execute("""
                     SELECT * FROM players WHERE player_id=?
                     """, (player_id,))
-        try:
-            player = cur.fetchone()
-        except TypeError:
+        player = cur.fetchone()
+        if not player:
             return jsonify(status=NOT_FOUND, message="no such player"), NOT_FOUND
 
         cur.execute("""
@@ -752,8 +753,8 @@ def add_firm_fine(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    firm_id = request.get_json().get("firm")
-    fine = request.get_json().get("fine")
+    firm_id = float(request.get_json().get("firm"))
+    fine = float(request.get_json().get("fine"))
     if fine < 1:
         return jsonify(status=400, message=f"invalid fine {fine}")
 
@@ -769,9 +770,8 @@ def add_firm_fine(sub=None, role=None):
         cur.execute("""
                     SELECT * FROM companies WHERE company_id=?
                     """, (firm_id,))
-        try:
-            company = cur.fetchone()
-        except TypeError:
+        company = cur.fetchone()
+        if not company:
             return jsonify(status=NOT_FOUND, message="no such company"), NOT_FOUND
 
         cur.execute("""
@@ -789,7 +789,7 @@ def get_logs(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
 
-    length = int(request.args.get("length"))
+    length = float(request.args.get("length"))
     debug = []
     data = {}
 
@@ -848,4 +848,4 @@ def clear_logs(sub=None, role=None):
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000, debug=True, ssl_context=('cert.pem','key.pem')) # ssl_context=('cert.pem','key.pem')
+    app.run(host="0.0.0.0", port=5000, debug=True) # ssl_context=('cert.pem','key.pem')
