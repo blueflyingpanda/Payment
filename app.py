@@ -183,8 +183,11 @@ def pay_tax(sub=None, role=None):
 @app.route('/transfer', methods=['POST'])  # {"amount": 42, "receiver": 21}
 @check_authorization
 def transfer_money(sub=None, role=None):
-    amount = float(request.get_json().get('amount'))
-    receiver = float(request.get_json().get('receiver'))
+    try:
+        amount = int(request.get_json().get('amount'))
+        receiver = int(request.get_json().get('receiver'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -234,60 +237,84 @@ def transfer_money(sub=None, role=None):
 @app.route('/pay', methods=['POST'])  # {"amount": 12, "company": "bumblebee", isTeacher: false}
 @check_authorization
 def pay_company(sub=None, role=None):
-    amount = float(request.get_json().get('amount'))
-    if amount < 1:
-        return jsonify(status=400, message=f"invalid amount {amount}")
-    receiver = request.get_json().get('company')
+    try:
+        service_id = int(request.get_json().get('service'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
+    if service_id < 1:
+        return jsonify(status=406, message=f"invalid amount {service_id}")
+    company_id = request.get_json().get('company')
+    status = request.get_json().get('paystatus')
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        if role == "player":
+        if not status:
             cur.execute("""
-                        SELECT money, player_id, firstname, lastname FROM players WHERE password=?;
-                        """, (sub,))
-            us_role, us_id = "Игрок", "PLAYER_ID"
-        elif role == "teacher":
-            cur.execute("""
-                        SELECT money, teacher_id, firstname, middlename FROM teachers WHERE password=?;
-                        """, (sub,))
-            us_role, us_id = "Учитель", "TEACHER_ID"
-        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
-            cur.execute("""
-                        SELECT money, minister_id, firstname, lastname FROM ministers WHERE password=?;
-                        """, (sub,))
-            us_role, us_id = "Министр", "MINISTER_ID"
-        user = cur.fetchone()
-        if user[0] < amount:
-            return jsonify(status=400, message="not enough money to pay")
+                        SELECT name, cost FROM services WHERE company_id=?
+                        """, (company_id,))
+            try:
+                service = cur.fetchall()
+                service = service[service_id-1]
+            except IndexError:
+                return jsonify(status=NOT_FOUND, message="company or service isn't found"), NOT_FOUND
+            
+            return jsonify(status=200, name=service[0], cost=service[1], service=[service_id, company_id])
 
-        if role != "teacher":
-            cur.execute("""SELECT name FROM companies WHERE name=?""", (receiver,))
-        else:
-            cur.execute("""SELECT name FROM companies WHERE name=? AND private=1""", (receiver,))
-        company = cur.fetchone()
-        if not company:
-            return jsonify(status=400, message="no such company")
-
-        if role == "player":
+        if status:
             cur.execute("""
-                        UPDATE players SET money=money - ? WHERE password=?;
-                        """, (amount, sub))
-        elif role == "teacher":
-            cur.execute("""
-                        UPDATE teachers SET money=money - ? WHERE password=?;
-                        """, (amount, sub))
-        elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
-            cur.execute("""
-                        UPDATE ministers SET money=money - ? WHERE password=?;
-                        """, (amount, sub))
+                        SELECT name, cost FROM services WHERE company_id=?
+                        """, (company_id,))
+            service = cur.fetchall()
+            serviceName, amount = service[service_id-1][0], service[service_id-1][1]
 
-        cur.execute("""UPDATE companies SET money=money + ? WHERE name=?""", (amount, receiver))
-        cur.execute("""UPDATE companies SET profit=profit + ? WHERE name=?""", (amount, receiver))
-        con.commit()
+            if role == "player":
+                cur.execute("""
+                            SELECT money, player_id, firstname, lastname FROM players WHERE password=?;
+                            """, (sub,))
+                us_role, us_id = "Игрок", "PLAYER_ID"
+            elif role == "teacher":
+                cur.execute("""
+                            SELECT money, teacher_id, firstname, middlename FROM teachers WHERE password=?;
+                            """, (sub,))
+                us_role, us_id = "Учитель", "TEACHER_ID"
+            elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
+                cur.execute("""
+                            SELECT money, minister_id, firstname, lastname FROM ministers WHERE password=?;
+                            """, (sub,))
+                us_role, us_id = "Министр", "MINISTER_ID"
+            user = cur.fetchone()
+            if user[0] < amount:
+                return jsonify(status=400, message="not enough money to pay")
 
-    userLog = f"{user[3]} {user[2]}, {us_id}: {user[1]}"
-    logger.info(f'{us_role} {userLog} отправил {amount} тлц фирме {receiver}')
-    return jsonify(status=200, message="money paid")
+            if role != "teacher":
+                cur.execute("""SELECT name FROM companies WHERE company_id=?""", (company_id,))
+            else:
+                cur.execute("""SELECT name FROM companies WHERE company_id=? AND private=1""", (company_id,))
+            company = cur.fetchone()
+            if not company:
+                return jsonify(status=400, message="no such company")
+
+            if role == "player":
+                cur.execute("""
+                            UPDATE players SET money=money - ? WHERE password=?;
+                            """, (amount, sub))
+            elif role == "teacher":
+                cur.execute("""
+                            UPDATE teachers SET money=money - ? WHERE password=?;
+                            """, (amount, sub))
+            elif role == "mvd" or role == "judgement" or role == "economic" or role == "socdev":
+                cur.execute("""
+                            UPDATE ministers SET money=money - ? WHERE password=?;
+                            """, (amount, sub))
+
+            cur.execute("""UPDATE companies SET money=money + ? WHERE company_id=?""", (amount, company_id))
+            cur.execute("""UPDATE companies SET profit=profit + ? WHERE company_id=?""", (amount, company_id))
+            con.commit()
+
+        userLog = f"{user[3]} {user[2]}, {us_id}: {user[1]}"
+        logger.info(f'{us_role} {userLog} отправил {amount} тлц за услугу "{serviceName}" фирме c COMPANY_ID: {company_id}')
+        return jsonify(status=200, message="serivce is paid")
+
 
 
 
@@ -369,11 +396,13 @@ def company_tax(sub=None, role=None):
 @app.route('/company-salary', methods=['POST'])
 @check_authorization
 def pay_company_salary(sub=None, role=None):
-    salary = float(request.get_json().get('salary'))
-    employees = request.get_json().get('employees')
-
+    try:
+        salary = int(request.get_json().get('salary'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if salary < 1:
         return jsonify(status=400, message=f"invalid salary {salary}")
+    employees = request.get_json().get('employees')
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -443,11 +472,14 @@ def pay_teacher_salary(sub=None, role=None):
     MAX_AMOUNT = 30
     MIN_AMOUNT = 10
     TAX = 0.1
-    amount = float(request.get_json().get('amount'))
+    try:
+        amount = int(request.get_json().get('amount'))
+        receiver = int(request.get_json().get('receiver'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if amount > MAX_AMOUNT or amount < MIN_AMOUNT:
         return jsonify(status=400, message=f"invalid salary")
     tax_amount = round(amount * TAX)
-    receiver = float(request.get_json().get('receiver'))
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -512,8 +544,10 @@ def get_debtors(sub=None, role=None):
 def check_player(sub=None, role=None):
     if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    student_id = float(request.args.get('player_id'))
+    try:
+        student_id = int(request.args.get('player_id'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -533,8 +567,10 @@ def check_player(sub=None, role=None):
 def drop_charges(sub=None, role=None):
     if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    student_id = float(request.get_json().get('player_id'))
+    try:
+        student_id = int(request.get_json().get('player_id'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -564,9 +600,11 @@ def drop_charges(sub=None, role=None):
 def withdraw(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    student_id = float(request.get_json().get('player_id'))
-    amount = float(request.get_json().get('amount'))
+    try:
+        student_id = int(request.get_json().get('player_id'))
+        amount = int(request.get_json().get('amount'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -607,9 +645,11 @@ def withdraw(sub=None, role=None):
 def deposit(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    student_id = float(request.get_json().get('player_id'))
-    amount = float(request.get_json().get('amount'))
+    try:
+        student_id = int(request.get_json().get('player_id'))
+        amount = int(request.get_json().get('amount'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if amount < 1:
         return jsonify(status=400, message=f"invalid amount {amount}")
 
@@ -644,9 +684,12 @@ def deposit(sub=None, role=None):
 @app.route('/add-employee', methods=['POST'])
 @check_authorization
 def add_employee(sub=None, role=None):
-    company = float(request.get_json().get('company'))
-    founder_id = float(request.get_json().get("founder"))
-    employee_id = float(request.get_json().get('employee'))
+    try:
+        company = int(request.get_json().get('company'))
+        founder_id = int(request.get_json().get("founder"))
+        employee_id = int(request.get_json().get('employee'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -679,9 +722,12 @@ def add_employee(sub=None, role=None):
 @app.route('/remove-employee', methods=['POST'])
 @check_authorization
 def remove_employee(sub=None, role=None):
-    company = float(request.get_json().get('company'))
-    founder_id = float(request.get_json().get("founder"))
-    employee_id = float(request.get_json().get('employee'))
+    try:
+        company = int(request.get_json().get('company'))
+        founder_id = int(request.get_json().get("founder"))
+        employee_id = int(request.get_json().get('employee'))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
@@ -716,9 +762,11 @@ def remove_employee(sub=None, role=None):
 def add_player_fine(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    player_id = float(request.get_json().get("player"))
-    fine = float(request.get_json().get("fine"))
+    try:
+        player_id = int(request.get_json().get("player"))
+        fine = int(request.get_json().get("fine"))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if fine < 1:
         return jsonify(status=400, message=f"invalid fine {fine}")
 
@@ -752,9 +800,11 @@ def add_player_fine(sub=None, role=None):
 def add_firm_fine(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    firm_id = float(request.get_json().get("firm"))
-    fine = float(request.get_json().get("fine"))
+    try:
+        firm_id = int(request.get_json().get("firm"))
+        fine = int(request.get_json().get("fine"))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     if fine < 1:
         return jsonify(status=400, message=f"invalid fine {fine}")
 
@@ -783,13 +833,51 @@ def add_firm_fine(sub=None, role=None):
 
 
 
+@app.route('/change-service-cost', methods=["POST"])
+@check_authorization
+def change_service_name(sub=None, role=None):
+    try:
+        cost = int(request.get_json().get("cost"))
+    except ValueError:
+        return jsonify(status=406, message=f"invalid amount")
+    if cost < 1:
+        return jsonify(status=406, message=f"invalid amount {cost}")
+    service = request.get_json().get("service")
+
+    with sqlite3.connect("payments.sqlite") as con:
+        cur = con.cursor()
+        cur.execute("""SELECT firstname, lastname, minister_id FROM ministers WHERE password=?""", (sub,))
+        try:
+            minister = cur.fetchone()
+            minister = f"{minister[1]} {minister[0]}, MINISTER_ID: {minister[2]}"
+        except TypeError:
+            return jsonify(status=400, message="no such minister"), 400
+        
+        cur.execute("""
+                    SELECT * FROM services WHERE name=?
+                    """, (service,))
+        service_all = cur.fetchall()
+        if not service_all:
+            return jsonify(status=NOT_FOUND, message="no such service"), NOT_FOUND
+
+        cur.execute("""
+                    UPDATE services SET cost=? WHERE name=?
+                    """, (cost, service,))
+        
+        logger.info(f"Цена услуги {service} была изменена на {cost} министром экономики {minister}")
+        return jsonify(status=200, message="service cost is changed")
+
+
+
 @app.route('/ministry_economic_logs', methods=['GET'])
 @check_authorization
 def get_logs(sub=None, role=None):
     if role != "economic":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
-
-    length = float(request.args.get("length"))
+    try:
+        length = int(request.args.get("length"))
+    except ValueError:
+        return jsonify(status=400, message=f"invalid amount")
     debug = []
     data = {}
 
