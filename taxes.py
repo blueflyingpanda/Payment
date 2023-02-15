@@ -12,10 +12,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger('rest_logger')
 
-MINISTER_SALARY = 100
-TAX = 10
+MINISTER_SALARY = 27
+TAX = 50
 DELAY = 60
-ERASE_HOURS = [9, 10, 11, 12, 13, 14, 15, 16]
+ERASE_HOURS = range(9, 20)
 
 def update_db():
     """set tax_paid to False, set fine for not paid tax"""
@@ -27,7 +27,7 @@ def update_db():
         cur.execute("UPDATE companies SET fine= CASE WHEN tax_paid=0 THEN fine + revenue/100*tax ELSE fine END WHERE private=1")
         cur.execute("UPDATE companies SET tax_paid=0 WHERE private=1")
         
-        cur.execute("UPDATE companies SET revenue= CASE WHEN profit < 500 THEN revenue ELSE profit END WHERE private=1")
+        cur.execute("UPDATE companies SET revenue= CASE WHEN profit < revenue/100*(tax+10) THEN revenue ELSE profit END WHERE private=1")
         cur.execute("UPDATE companies SET profit=0 WHERE private=1")
         
         cur.execute("UPDATE ministers SET money=money+?", (MINISTER_SALARY,))
@@ -42,9 +42,9 @@ if __name__ == '__main__':
     while True:
         hour = datetime.datetime.now(msk).hour
         minute = datetime.datetime.now(msk).minute
-        if hour in ERASE_HOURS and minute == 0:
+        if hour in ERASE_HOURS and minute == 5:
             update_db()
-            print("Timesleepped on 60 minutes")
+            print("Timesleepped on 55 minutes")
             time.sleep(DELAY * 55)
         else:
             print("Timesleepped on 55 seconds")

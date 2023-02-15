@@ -20,7 +20,7 @@ app = Flask(__name__)
 limiter = Limiter(
         get_remote_address,
         app=app,
-        default_limits=["2/second"],
+        default_limits=["10 per 20 seconds"],
         storage_uri="memory://",)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, methods=["GET", "POST", "OPTIONS"])
 
@@ -47,7 +47,7 @@ logger = logging.getLogger('rest_logger')
 def check_authorization(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        time.sleep(1)
+        # time.sleep(1)
         token = request.headers.get('Authorization')
         if not token:
             return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
@@ -108,13 +108,13 @@ def authenticate_user():
 
 
 
-@app.route("/company-diagram", methods=["GET"])
+@app.route("/teacher-diagram", methods=["GET"])
 def get_company_diagram():
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("SELECT name, profit FROM companies WHERE private=0")
+        cur.execute("SELECT subject, demand FROM teachers")
         companies = cur.fetchall()
-        cur.execute("SELECT SUM(profit) FROM companies WHERE private=0")
+        cur.execute("SELECT SUM(demand) FROM teachers")
         profit_sum = cur.fetchone()[0]
 
     return jsonify(status=200, companies=companies, sum=profit_sum)
@@ -286,10 +286,7 @@ def pay_company(sub=None, role=None):
             if user[0] < amount:
                 return jsonify(status=400, message="not enough money to pay")
 
-            if role != "teacher":
-                cur.execute("""SELECT name FROM companies WHERE company_id=?""", (company_id,))
-            else:
-                cur.execute("""SELECT name FROM companies WHERE company_id=? AND private=1""", (company_id,))
+            cur.execute("""SELECT name FROM companies WHERE company_id=?""", (company_id,))
             company = cur.fetchone()
             if not company:
                 return jsonify(status=400, message="no such company")
@@ -339,6 +336,11 @@ def get_company_info(sub=None, role=None):
         subs = {member[1] for member in members}
         members = [member[2] + " " + member[3] + ", PLAYER_ID: " + str(member[0]) for member in members]
 
+        cur.execute("""
+                    SELECT * FROM services WHERE company_id=?
+                    """, (company_id, ))
+        services = cur.fetchall()
+
         if sub not in subs:
             return jsonify(status=401, error=f"User cannot view info of company with id {company_id}")
 
@@ -347,7 +349,7 @@ def get_company_info(sub=None, role=None):
                     """, (sub,))
         player_info = cur.fetchone()
 
-    return jsonify(status=200, company=company, members=members, playerinfo=player_info)
+    return jsonify(status=200, company=company, members=members, services=services, playerinfo=player_info)
 
 
 
@@ -487,7 +489,7 @@ def pay_teacher_salary(sub=None, role=None):
                     SELECT firstname, middlename, teacher_id FROM teachers WHERE password=?;
                     """, (sub,))
         teacher = cur.fetchone()
-        teacher = f"{teacher[1]} {teacher[0]}, TEACHER_ID: {teacher[2]}"
+        teacher, teacher_id = f"{teacher[1]} {teacher[0]}, TEACHER_ID: {teacher[2]}", teacher[2]
 
         cur.execute("""SELECT player_id, tax_paid FROM players WHERE player_id=?""", (receiver,))
         player = cur.fetchone()
@@ -501,6 +503,7 @@ def pay_teacher_salary(sub=None, role=None):
         cur.execute(
             """UPDATE players SET money=money + ?, tax_paid= CASE WHEN ? > 0 THEN 1 ELSE tax_paid END WHERE player_id=?""",
             (amount, tax_amount, receiver))
+        cur.execute("UPDATE teachers SET demand=demand+1 WHERE teacher_id=?", (teacher_id,))
         con.commit()
 
     logger.info(f'Учитель {teacher} выплатил зарплату: ({amount}) игроку с PLAYER_ID: {receiver}')
@@ -532,7 +535,7 @@ def get_debtors(sub=None, role=None):
 
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("""SELECT firstname, lastname, player_id, tax_paid, fine FROM players WHERE fine > 1;""")
+        cur.execute("""SELECT firstname, lastname, player_id, tax_paid, fine, money FROM players WHERE fine > 1;""")
         users = cur.fetchall()
 
     return jsonify(status=200, debtors=users)
@@ -760,7 +763,7 @@ def remove_employee(sub=None, role=None):
 @app.route('/add-player-fine', methods=["POST"])
 @check_authorization
 def add_player_fine(sub=None, role=None):
-    if role != "economic":
+    if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
     try:
         player_id = int(request.get_json().get("player"))
@@ -798,7 +801,7 @@ def add_player_fine(sub=None, role=None):
 @app.route('/add-firm-fine', methods=["POST"])
 @check_authorization
 def add_firm_fine(sub=None, role=None):
-    if role != "economic":
+    if role != "economic" and role != "judgement":
         return jsonify(status=UNAUTHORIZED, message=["unauthorized"]), UNAUTHORIZED
     try:
         firm_id = int(request.get_json().get("firm"))
@@ -864,7 +867,7 @@ def change_service_name(sub=None, role=None):
                     UPDATE services SET cost=? WHERE name=?
                     """, (cost, service,))
         
-        logger.info(f"Цена услуги {service} была изменена на {cost} министром экономики {minister}")
+        logger.info(f"Цена услуги {service} была изменена на {cost} тлц министром экономики {minister}")
         return jsonify(status=200, message="service cost is changed")
 
 
