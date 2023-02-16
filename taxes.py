@@ -12,25 +12,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger('rest_logger')
 
-MINISTER_SALARY = 27
-TAX = 50
+FINE = 50
 DELAY = 60
-ERASE_HOURS = range(9, 20)
+ERASE_HOURS = ["10:30", "11:30", "12:30", "13:30"]
 
 def update_db():
     """set tax_paid to False, set fine for not paid tax"""
     with sqlite3.connect("payments.sqlite") as con:
         cur = con.cursor()
-        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + ? ELSE fine END", (TAX,))
+        cur.execute("UPDATE players SET fine= CASE WHEN tax_paid=0 THEN fine + ? ELSE fine END", (FINE,))
         cur.execute("UPDATE players SET tax_paid=0")
         
-        cur.execute("UPDATE companies SET fine= CASE WHEN tax_paid=0 THEN fine + revenue/100*tax ELSE fine END WHERE private=1")
+        cur.execute("UPDATE companies SET fine= CASE WHEN tax_paid=0 THEN fine + tax ELSE fine END WHERE private=1")
         cur.execute("UPDATE companies SET tax_paid=0 WHERE private=1")
-        
-        cur.execute("UPDATE companies SET revenue= CASE WHEN profit < revenue/100*(tax+10) THEN revenue ELSE profit END WHERE private=1")
-        cur.execute("UPDATE companies SET profit=0 WHERE private=1")
-        
-        cur.execute("UPDATE ministers SET money=money+?", (MINISTER_SALARY,))
         
         con.commit()
     logger.info('ПЕРИОДИЧЕСКОЕ ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ ПРОИЗВЕДЕНО УСПЕШНО!')
@@ -42,7 +36,8 @@ if __name__ == '__main__':
     while True:
         hour = datetime.datetime.now(msk).hour
         minute = datetime.datetime.now(msk).minute
-        if hour in ERASE_HOURS and minute == 5:
+        timenow = f"{hour}:{minute}"
+        if timenow in ERASE_HOURS:
             update_db()
             print("Timesleepped on 55 minutes")
             time.sleep(DELAY * 55)
